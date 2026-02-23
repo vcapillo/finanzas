@@ -443,22 +443,24 @@ def list_snapshots(db: Session = Depends(get_db)):
 
 @app.post("/investments/snapshots", status_code=201)
 def save_snapshot(data: SnapshotIn, db: Session = Depends(get_db)):
-    # Si ya existe un snapshot para la misma fecha, actualiza
-    existing = (
-        db.query(models.PortfolioSnapshot)
-        .filter(models.PortfolioSnapshot.date == data.date)
-        .first()
-    )
-    if existing:
-        existing.total_usd     = data.total_usd
-        existing.total_pen     = data.total_pen
-        existing.exchange_rate = data.exchange_rate
-        existing.detail        = data.detail
-    else:
-        obj = models.PortfolioSnapshot(**data.model_dump())
-        db.add(obj)
+    """
+    Siempre inserta un nuevo snapshot.
+    Se permite múltiples registros por día — el usuario decide cuándo guardar.
+    """
+    obj = models.PortfolioSnapshot(**data.model_dump())
+    db.add(obj)
     db.commit()
-    return {"message": f"Snapshot {data.date} guardado", "total_usd": data.total_usd}
+    db.refresh(obj)
+    return {"message": f"Snapshot {data.date} guardado", "id": obj.id, "total_usd": data.total_usd}
+
+
+@app.delete("/investments/snapshots/{snap_id}", status_code=204)
+def delete_snapshot(snap_id: int, db: Session = Depends(get_db)):
+    obj = db.query(models.PortfolioSnapshot).filter(models.PortfolioSnapshot.id == snap_id).first()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Snapshot no encontrado")
+    db.delete(obj)
+    db.commit()
 
 
 # ═══════════════════════════════════════════════════════════════

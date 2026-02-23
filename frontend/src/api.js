@@ -96,4 +96,7 @@ export const api = {
 
   saveSnapshot: (snapshot) =>
     request("POST", "/investments/snapshots", snapshot),
+
+  deleteSnapshot: (id) =>
+    request("DELETE", `/investments/snapshots/${id}`),
 };

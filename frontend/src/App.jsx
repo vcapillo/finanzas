@@ -1318,6 +1318,14 @@ export default function App() {
     } catch(e){showToast("Error guardando snapshot: "+e.message);}
   };
 
+  const removeSnapshot=async(id)=>{
+    try {
+      await api.deleteSnapshot(id);
+      setSnapshots(p=>p.filter(x=>x.id!==id));
+      showToast("Snapshot eliminado");
+    } catch(e){showToast("Error: "+e.message);}
+  };
+
   const saveSettings=async(cfg)=>{
     try {
       await api.saveSettings(cfg);
@@ -1793,6 +1801,7 @@ export default function App() {
             onEdit={editInvestment}
             onDelete={removeInvestment}
             onSaveSnapshot={addSnapshot}
+            onDeleteSnapshot={removeSnapshot}
           />
         )}
       </div>
@@ -1808,7 +1817,7 @@ const COINGECKO_IDS = {
   USDT:"tether", USDC:"usd-coin", LTC:"litecoin", ATOM:"cosmos",
 };
 
-function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSaveSnapshot }) {
+function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSaveSnapshot, onDeleteSnapshot }) {
   const [prices,  setPrices]       = useState({});        // {TICKER: price_usd}
   const [exRate,  setExRate]       = useState(3.72);       // USD → PEN
   const [loading, setLoading]      = useState(false);
@@ -2265,9 +2274,22 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
                   <span style={{color:"#38bdf8",fontSize:12,minWidth:110}}>
                     S/{snap.total_pen.toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})}
                   </span>
-                  <span style={{color:"#444",fontSize:11}}>
+                  <span style={{color:"#444",fontSize:11,flex:1}}>
                     TC: S/{snap.exchange_rate.toFixed(3)}
                   </span>
+                  <button
+                    onClick={()=>{
+                      if(window.confirm(`¿Eliminar snapshot del ${snap.date}?`))
+                        onDeleteSnapshot(snap.id);
+                    }}
+                    title="Eliminar snapshot"
+                    style={{background:"none",border:"none",color:"#2a2a30",cursor:"pointer",
+                      padding:4,borderRadius:4,lineHeight:0,
+                      transition:"color .15s"}}
+                    onMouseEnter={e=>e.currentTarget.style.color="#f87171"}
+                    onMouseLeave={e=>e.currentTarget.style.color="#2a2a30"}>
+                    <Trash2 size={13}/>
+                  </button>
                 </div>
               ))}
             </div>
