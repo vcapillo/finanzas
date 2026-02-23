@@ -26,6 +26,26 @@ const TYPE_CONFIG = {
   ahorro:         { label:"🏦 Ahorro",         color:"#38bdf8", bg:"rgba(56,189,248,0.1)",  border:"rgba(56,189,248,0.25)" },
 };
 
+// Paleta extendida — colores distintos por categoría individual
+const CAT_PALETTE = [
+  "#22c55e","#f59e0b","#f87171","#38bdf8","#a78bfa",
+  "#fb923c","#34d399","#e879f9","#facc15","#60a5fa",
+  "#f472b6","#4ade80","#fbbf24","#a3e635","#c084fc",
+  "#2dd4bf","#fb7185","#818cf8","#fdba74","#86efac",
+];
+const _catColorCache = {};
+let   _catColorIdx   = 0;
+const getCatColor = (cat, type) => {
+  if (_catColorCache[cat]) return _catColorCache[cat];
+  // Ingresos siempre verde, ahorros siempre azul claro
+  if (type==="ingreso") return (_catColorCache[cat]="#22c55e");
+  if (type==="ahorro")  return (_catColorCache[cat]="#38bdf8");
+  const color = CAT_PALETTE[_catColorIdx % CAT_PALETTE.length];
+  _catColorIdx++;
+  _catColorCache[cat] = color;
+  return color;
+};
+
 const ACCOUNT_TYPES = {
   banco:     { label:"Banco",      icon:"🏦" },
   billetera: { label:"Billetera",  icon:"📱" },
@@ -791,9 +811,44 @@ const Metric = ({label,value,sub,color="#f0f0f2",icon}) => (
 const TTip = ({active,payload,label}) => {
   if (!active||!payload?.length) return null;
   return (
-    <div style={{background:"#0a0a0c",border:"1px solid #2a2a30",borderRadius:8,padding:"10px 14px"}}>
-      <p style={{color:"#888",fontSize:11,margin:"0 0 4px"}}>{label}</p>
-      {payload.map((p,i)=><p key={i} style={{color:p.color||"#f0f0f2",fontSize:13,fontWeight:600,margin:0}}>{p.name}: {typeof p.value==="number"?fmtN(p.value):p.value}</p>)}
+    <div style={{
+      background:"#ffffff", border:"1px solid #e2e8f0",
+      borderRadius:10, padding:"10px 16px",
+      boxShadow:"0 4px 20px rgba(0,0,0,0.35)", minWidth:140
+    }}>
+      {label&&<p style={{color:"#475569",fontSize:11,fontWeight:600,margin:"0 0 6px",letterSpacing:"0.3px"}}>{label}</p>}
+      {payload.map((p,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:7,marginTop:i>0?4:0}}>
+          <span style={{width:10,height:10,borderRadius:3,background:p.color||"#64748b",display:"inline-block",flexShrink:0}}/>
+          <span style={{color:"#334155",fontSize:12}}>{p.name}:</span>
+          <span style={{color:"#0f172a",fontSize:13,fontWeight:700,marginLeft:"auto",paddingLeft:8}}>
+            {typeof p.value==="number"?fmtN(p.value):p.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Tooltip genérico para charts en USD (inversiones)
+const TTipUSD = ({active,payload,label}) => {
+  if (!active||!payload?.length) return null;
+  return (
+    <div style={{
+      background:"#ffffff", border:"1px solid #e2e8f0",
+      borderRadius:10, padding:"10px 16px",
+      boxShadow:"0 4px 20px rgba(0,0,0,0.35)", minWidth:150
+    }}>
+      {label&&<p style={{color:"#475569",fontSize:11,fontWeight:600,margin:"0 0 6px"}}>{label}</p>}
+      {payload.map((p,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:7,marginTop:i>0?4:0}}>
+          <span style={{width:10,height:10,borderRadius:3,background:p.color||"#64748b",display:"inline-block",flexShrink:0}}/>
+          <span style={{color:"#334155",fontSize:12}}>{p.name}:</span>
+          <span style={{color:"#0f172a",fontSize:13,fontWeight:700,marginLeft:"auto",paddingLeft:8}}>
+            {typeof p.value==="number"?`$${p.value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:p.value}
+          </span>
+        </div>
+      ))}
     </div>
   );
 };
@@ -1292,7 +1347,7 @@ export default function App() {
     if (!catMap[t.category]) catMap[t.category]={amount:0,type:t.type};
     catMap[t.category].amount+=Math.abs(t.amount);
   });
-  const catData=Object.entries(catMap).map(([cat,v])=>({cat,amount:v.amount,type:v.type,color:TYPE_CONFIG[v.type].color})).sort((a,b)=>b.amount-a.amount);
+  const catData=Object.entries(catMap).map(([cat,v])=>({cat,amount:v.amount,type:v.type,color:getCatColor(cat,v.type)})).sort((a,b)=>b.amount-a.amount);
   const pieData=[
     {name:"Gastos Fijos",value:metrics.gastosFijos,color:TYPE_CONFIG.gasto_fijo.color},
     {name:"Gastos Variables",value:metrics.gastosVariables,color:TYPE_CONFIG.gasto_variable.color},
@@ -1473,7 +1528,7 @@ export default function App() {
                 <ResponsiveContainer width="100%" height={185}>
                   <PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={48} outerRadius={72} dataKey="value" paddingAngle={3}>
                     {pieData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Pie>
-                    <Tooltip formatter={v=>fmtN(v)} contentStyle={{background:"#0a0a0c",border:"1px solid #2a2a30",borderRadius:8}}/>
+                    <Tooltip content={<TTip/>}/>
                     <Legend formatter={v=><span style={{color:"#888",fontSize:10}}>{v}</span>}/>
                   </PieChart>
                 </ResponsiveContainer>
@@ -1503,8 +1558,7 @@ export default function App() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#1a1a20"/>
                     <XAxis dataKey="label" tick={{fill:"#555",fontSize:10}} axisLine={false} tickLine={false}/>
                     <YAxis tick={{fill:"#444",fontSize:10}} tickFormatter={v=>`S/${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} width={48}/>
-                    <Tooltip contentStyle={{background:"#0d0d10",border:"1px solid #2a2a30",borderRadius:8,fontSize:12}}
-                      formatter={(v,name)=>[fmtN(v),name]} labelStyle={{color:"#888",marginBottom:4}}/>
+                    <Tooltip content={<TTip/>}/>
                     <Legend formatter={v=><span style={{color:"#888",fontSize:10}}>{v}</span>}/>
                     <Line type="monotone" dataKey="ingresos"        name="💰 Ingresos"     stroke="#22c55e" strokeWidth={2} dot={{fill:"#22c55e",r:3}} activeDot={{r:5}}/>
                     <Line type="monotone" dataKey="gastosFijos"     name="🏠 Gastos Fijos" stroke="#f59e0b" strokeWidth={2} dot={{fill:"#f59e0b",r:3}} activeDot={{r:5}}/>
@@ -1546,8 +1600,7 @@ export default function App() {
                       <CartesianGrid strokeDasharray="3 3" stroke="#1a1a20" vertical={false}/>
                       <XAxis dataKey="cat" tick={{fill:"#666",fontSize:10}} axisLine={false} tickLine={false}/>
                       <YAxis tick={{fill:"#444",fontSize:10}} tickFormatter={v=>`S/${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} width={44}/>
-                      <Tooltip contentStyle={{background:"#0d0d10",border:"1px solid #2a2a30",borderRadius:8,fontSize:12}}
-                        formatter={(v,name)=>[fmtN(v),name]} labelStyle={{color:"#888",marginBottom:4}}/>
+                      <Tooltip content={<TTip/>}/>
                       <Bar dataKey="actual"   name={curData.label}  radius={[4,4,0,0]}>{compData.map((e,i)=><Cell key={i} fill={e.color}/>)}</Bar>
                       <Bar dataKey="anterior" name={prevData.label} radius={[4,4,0,0]}>{compData.map((e,i)=><Cell key={i} fill={`${e.color}44`}/>)}</Bar>
                     </BarChart>
@@ -1677,10 +1730,10 @@ export default function App() {
           budgetTypes.forEach(type=>{
             const cats = (categories[type]||DEFAULT_CATEGORIES[type]||[]);
             cats.forEach(cat=>{
-              if (!allCats.has(cat)) allCats.set(cat,{cat, amount:0, type, color:TYPE_CONFIG[type].color});
+              if (!allCats.has(cat)) allCats.set(cat,{cat, amount:0, type, color:getCatColor(cat,type)});
             });
           });
-          catData.forEach(({cat,amount,type,color})=>{ allCats.set(cat,{cat,amount,type,color}); });
+          catData.forEach(({cat,amount,type})=>{ allCats.set(cat,{cat,amount,type,color:getCatColor(cat,type)}); });
           const sorted = [...allCats.values()].sort((a,b)=>{
             const aBud=budgets[a.cat]||0, bBud=budgets[b.cat]||0;
             if (aBud>0&&bBud===0) return -1;
@@ -1761,7 +1814,8 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
   const [loading, setLoading]      = useState(false);
   const [showForm,setShowForm]     = useState(false);
   const [editId,  setEditId]       = useState(null);
-  const [manualPrices, setManualPrices] = useState({});   // precios manuales por ticker
+  const [manualPrices, setManualPrices] = useState({});   // precios confirmados
+  const [inputValues,  setInputValues]  = useState({});   // valor mientras el usuario escribe
   const [form, setForm] = useState({
     name:"", ticker:"", type:"crypto", platform:"Binance",
     quantity:"", buy_price:"", buy_date: new Date().toISOString().split("T")[0], notes:""
@@ -1827,8 +1881,12 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
   useEffect(()=>{ if(investments.length>0) fetchPrices(); },[investments.length]);
 
   // ── Cálculos del portafolio ────────────────────────────────
-  const getPrice = (ticker) =>
-    prices[ticker.toUpperCase()] ?? manualPrices[ticker.toUpperCase()] ?? null;
+  // getPrice: solo precios confirmados (auto-fetch o manualPrices)
+  // inputValues NO entra aquí — evita que el input desaparezca al escribir
+  const getPrice = (ticker) => {
+    const t = ticker.toUpperCase();
+    return prices[t] ?? manualPrices[t] ?? null;
+  };
 
   const enriched = investments.map(inv=>{
     const ticker   = inv.ticker.toUpperCase();
@@ -1855,18 +1913,56 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
 
   // ── Snapshot ───────────────────────────────────────────────
   const handleSnapshot = async () => {
-    const today = new Date().toISOString().split("T")[0];
+    // Primero confirmar cualquier precio que esté siendo escrito en inputs
+    const flushed = {...manualPrices};
+    Object.entries(inputValues).forEach(([ticker, val])=>{
+      const parsed = parseFloat(val);
+      if (!isNaN(parsed) && parsed > 0) flushed[ticker] = parsed;
+    });
+    setManualPrices(flushed);
+
+    // Verificar que todos los activos tienen precio
+    const sinPrecio = investments.filter(inv=>{
+      const t = inv.ticker.toUpperCase();
+      return !prices[t] && !flushed[t];
+    });
+
+    if (sinPrecio.length > 0) {
+      const lista = sinPrecio.map(i=>i.ticker).join(", ");
+      const ok = window.confirm(
+        `Los siguientes activos no tienen precio actual: ${lista}\n\n` +
+        `Se usará el precio de compra como valor actual.\n¿Continuar de todas formas?`
+      );
+      if (!ok) return;
+    }
+
+    // Recalcular con precios confirmados
+    const enrichedForSnap = investments.map(inv=>{
+      const t = inv.ticker.toUpperCase();
+      const curPrice = prices[t] ?? flushed[t] ?? null;
+      const curValue = curPrice != null ? inv.quantity * curPrice : inv.quantity * inv.buy_price;
+      return { ...inv, ticker:t, curPrice, curValue };
+    });
+
+    const totalUSD = enrichedForSnap.reduce((s,i)=>s+i.curValue, 0);
+
+    // Fecha+hora para permitir múltiples snapshots por día
+    const now      = new Date();
+    const dateStr  = now.toISOString().split("T")[0];
+    const timeStr  = now.toTimeString().slice(0,5);       // HH:MM
+    const dateTime = `${dateStr} ${timeStr}`;
+
     await onSaveSnapshot({
-      date:          today,
-      total_usd:     parseFloat(totalCurUSD.toFixed(2)),
-      total_pen:     parseFloat(totalCurPEN.toFixed(2)),
+      date:          dateTime,
+      total_usd:     parseFloat(totalUSD.toFixed(2)),
+      total_pen:     parseFloat((totalUSD * exRate).toFixed(2)),
       exchange_rate: exRate,
-      detail:        enriched.map(i=>({
+      detail:        enrichedForSnap.map(i=>({
         ticker:    i.ticker,
         name:      i.name,
         qty:       i.quantity,
-        price_usd: i.curPrice ?? i.buy_price,
-        value_usd: parseFloat((i.curValue??i.costBasis).toFixed(2)),
+        price_usd: parseFloat((i.curPrice ?? i.buy_price).toFixed(4)),
+        value_usd: parseFloat(i.curValue.toFixed(2)),
       })),
     });
   };
@@ -2039,19 +2135,32 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
                       <td style={{padding:"10px",color:"#888"}}>{inv.quantity.toLocaleString("en-US",{maximumFractionDigits:6})}</td>
                       <td style={{padding:"10px",color:"#666"}}>{fmtUSD(inv.buy_price)}</td>
                       <td style={{padding:"10px",color:"#e0e0e8"}}>
-                        {inv.curPrice!=null ? fmtUSD(inv.curPrice) : (
-                          <input type="number" placeholder="precio"
-                            style={{...s.input,width:80,padding:"2px 6px",fontSize:11}}
-                            defaultValue={manualPrices[inv.ticker]||""}
+                        {prices[inv.ticker] != null
+                          ? fmtUSD(prices[inv.ticker])   // precio automático → solo mostrar
+                          : (
+                          <input type="number" placeholder="ingresar precio"
+                            style={{...s.input,width:90,padding:"2px 6px",fontSize:11,
+                              border:`1px solid ${manualPrices[inv.ticker]?"rgba(34,197,94,0.4)":"rgba(245,158,11,0.4)"}`,
+                              color:manualPrices[inv.ticker]?"#22c55e":"#f59e0b"}}
+                            value={inputValues[inv.ticker] !== undefined
+                              ? inputValues[inv.ticker]
+                              : (manualPrices[inv.ticker]!=null ? String(manualPrices[inv.ticker]) : "")}
+                            onChange={e=>setInputValues(p=>({...p,[inv.ticker]:e.target.value}))}
                             onBlur={e=>{
                               const val=parseFloat(e.target.value);
-                              if (!isNaN(val)&&val>0) setManualPrices(p=>({...p,[inv.ticker]:val}));
+                              if(!isNaN(val)&&val>0){
+                                setManualPrices(p=>({...p,[inv.ticker]:val}));
+                                setInputValues(p=>({...p,[inv.ticker]:String(val)}));
+                              }
                             }}
                             onKeyDown={e=>{
                               if(e.key==="Enter"){
                                 const val=parseFloat(e.target.value);
-                                if(!isNaN(val)&&val>0) setManualPrices(p=>({...p,[inv.ticker]:val}));
-                                e.target.blur();
+                                if(!isNaN(val)&&val>0){
+                                  setManualPrices(p=>({...p,[inv.ticker]:val}));
+                                  setInputValues(p=>({...p,[inv.ticker]:String(val)}));
+                                  e.target.blur();
+                                }
                               }
                             }}/>
                         )}
@@ -2098,8 +2207,7 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
                 <Pie data={pieData} cx="50%" cy="50%" innerRadius={52} outerRadius={78} dataKey="value" paddingAngle={4}>
                   {pieData.map((e,i)=><Cell key={i} fill={e.color}/>)}
                 </Pie>
-                <Tooltip formatter={v=>`$${v.toLocaleString("en-US",{minimumFractionDigits:2})}`}
-                  contentStyle={{background:"#0a0a0c",border:"1px solid #2a2a30",borderRadius:8}}/>
+                <Tooltip content={<TTipUSD/>}/>
                 <Legend formatter={v=><span style={{color:"#888",fontSize:11}}>{v}</span>}/>
               </PieChart>
             </ResponsiveContainer>
@@ -2110,7 +2218,7 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
               <BarChart data={enriched.sort((a,b)=>(b.curValue??0)-(a.curValue??0)).slice(0,6)} layout="vertical">
                 <XAxis type="number" tick={{fill:"#444",fontSize:10}} tickFormatter={v=>`$${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false}/>
                 <YAxis type="category" dataKey="ticker" tick={{fill:"#888",fontSize:11}} width={50} axisLine={false} tickLine={false}/>
-                <Tooltip formatter={v=>fmtUSD(v)} contentStyle={{background:"#0a0a0c",border:"1px solid #2a2a30",borderRadius:8}}/>
+                <Tooltip content={<TTipUSD/>}/>
                 <Bar dataKey="curValue" name="Valor USD" radius={[0,4,4,0]}>
                   {enriched.slice(0,6).map((e,i)=>(
                     <Cell key={i} fill={e.type==="crypto"?"#f59e0b":"#38bdf8"}/>
@@ -2123,40 +2231,76 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
       )}
 
       {/* Evolución del portafolio */}
-      {snapshots.length>=2?(
-        <div style={s.card}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-            <p style={{color:"#555",fontSize:11,fontWeight:600,margin:0,letterSpacing:"0.5px"}}>EVOLUCIÓN DEL PORTAFOLIO</p>
-            <span style={{color:"#333",fontSize:10}}>{snapshots.length} snapshots</span>
-          </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={snapshots} margin={{top:4,right:8,left:0,bottom:0}}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1a1a20"/>
-              <XAxis dataKey="date" tick={{fill:"#555",fontSize:10}} axisLine={false} tickLine={false}
-                tickFormatter={d=>d.substring(5)}/>
-              <YAxis yAxisId="usd" orientation="left"  tick={{fill:"#444",fontSize:10}}
-                tickFormatter={v=>`$${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} width={44}/>
-              <YAxis yAxisId="pen" orientation="right" tick={{fill:"#444",fontSize:10}}
-                tickFormatter={v=>`S/${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} width={52}/>
-              <Tooltip contentStyle={{background:"#0d0d10",border:"1px solid #2a2a30",borderRadius:8,fontSize:12}}
-                formatter={(v,name)=>[name.includes("USD")?fmtUSD(v):fmtPEN(v), name]}
-                labelStyle={{color:"#888",marginBottom:4}}/>
-              <Legend formatter={v=><span style={{color:"#888",fontSize:10}}>{v}</span>}/>
-              <Line yAxisId="usd" type="monotone" dataKey="total_usd" name="Total USD"
-                stroke="#22c55e" strokeWidth={2} dot={{fill:"#22c55e",r:3}} activeDot={{r:5}}/>
-              <Line yAxisId="pen" type="monotone" dataKey="total_pen" name="Total S/"
-                stroke="#38bdf8" strokeWidth={2} dot={{fill:"#38bdf8",r:3}} activeDot={{r:5}} strokeDasharray="5 3"/>
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      ):(
-        <div style={{...s.card,border:"1px dashed #1e1e26",textAlign:"center",padding:24,color:"#444"}}>
-          <p style={{margin:"0 0 6px",fontSize:13}}>📸 Sin historial aún</p>
-          <p style={{margin:0,fontSize:12,color:"#333"}}>
-            Haz clic en <b style={{color:"#38bdf8"}}>Guardar snapshot</b> periódicamente para registrar la evolución de tu portafolio en el tiempo.
+      <div style={s.card}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <p style={{color:"#555",fontSize:11,fontWeight:600,margin:0,letterSpacing:"0.5px"}}>
+            HISTORIAL DE SNAPSHOTS
           </p>
+          <span style={{color:"#333",fontSize:10}}>{snapshots.length} registros</span>
         </div>
-      )}
+
+        {snapshots.length===0?(
+          <div style={{textAlign:"center",padding:24,color:"#444"}}>
+            <p style={{margin:"0 0 6px",fontSize:13}}>📸 Sin historial aún</p>
+            <p style={{margin:0,fontSize:12,color:"#333"}}>
+              Haz clic en <b style={{color:"#38bdf8"}}>Guardar snapshot</b> para registrar el valor actual del portafolio.
+            </p>
+          </div>
+        ):(
+          <>
+            {/* Tabla de snapshots guardados */}
+            <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom: snapshots.length>=2?16:0}}>
+              {[...snapshots].reverse().map((snap,i)=>(
+                <div key={snap.id||i} style={{display:"flex",alignItems:"center",gap:12,
+                  background:"#0a0a0c",border:"1px solid #1a1a20",borderRadius:7,padding:"9px 14px"}}>
+                  <div style={{minWidth:130}}>
+                    <div style={{color:"#888",fontSize:12}}>{snap.date.split(" ")[0]}</div>
+                    {snap.date.includes(" ")&&(
+                      <div style={{color:"#444",fontSize:10}}>{snap.date.split(" ")[1]}</div>
+                    )}
+                  </div>
+                  <span style={{color:"#22c55e",fontWeight:700,fontSize:13,minWidth:110}}>
+                    ${snap.total_usd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+                  </span>
+                  <span style={{color:"#38bdf8",fontSize:12,minWidth:110}}>
+                    S/{snap.total_pen.toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})}
+                  </span>
+                  <span style={{color:"#444",fontSize:11}}>
+                    TC: S/{snap.exchange_rate.toFixed(3)}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Gráfico solo si hay 2+ snapshots */}
+            {snapshots.length>=2&&(
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={snapshots} margin={{top:4,right:8,left:0,bottom:0}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1a1a20"/>
+                  <XAxis dataKey="date" tick={{fill:"#555",fontSize:10}} axisLine={false} tickLine={false}
+                    tickFormatter={d=>d.slice(5,10)}/>
+                  <YAxis yAxisId="usd" orientation="left"  tick={{fill:"#444",fontSize:10}}
+                    tickFormatter={v=>`$${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} width={44}/>
+                  <YAxis yAxisId="pen" orientation="right" tick={{fill:"#444",fontSize:10}}
+                    tickFormatter={v=>`S/${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} width={52}/>
+                  <Tooltip content={<TTip/>}/>
+                  <Legend formatter={v=><span style={{color:"#888",fontSize:10}}>{v}</span>}/>
+                  <Line yAxisId="usd" type="monotone" dataKey="total_usd" name="Total USD"
+                    stroke="#22c55e" strokeWidth={2} dot={{fill:"#22c55e",r:3}} activeDot={{r:5}}/>
+                  <Line yAxisId="pen" type="monotone" dataKey="total_pen" name="Total S/"
+                    stroke="#38bdf8" strokeWidth={2} dot={{fill:"#38bdf8",r:3}} activeDot={{r:5}} strokeDasharray="5 3"/>
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+
+            {snapshots.length===1&&(
+              <p style={{color:"#333",fontSize:11,textAlign:"center",margin:"8px 0 0"}}>
+                Guarda un segundo snapshot para ver el gráfico de evolución.
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
