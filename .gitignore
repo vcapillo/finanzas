@@ -1,0 +1,27 @@
+# Base de datos local (datos personales)
+*.db
+*.sqlite
+data/
+
+# Variables de entorno
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Node / React
+node_modules/
+frontend/dist/
+frontend/build/
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

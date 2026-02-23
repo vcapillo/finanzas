@@ -1,0 +1,79 @@
+version: "3.9"
+
+# ═══════════════════════════════════════════════════════════════
+# FinanzasVH — Configuración para Nginx Proxy Manager
+# ═══════════════════════════════════════════════════════════════
+#
+# ARQUITECTURA:
+#   Internet/Red local
+#       │
+#       ▼
+#   Nginx Proxy Manager  (puerto 80/443)
+#       │  proxy_pass → finanzas-frontend:80
+#       ▼
+#   [finanzas-frontend]  nginx interno
+#       │  /api/* → proxy_pass → finanzas-backend:8000
+#       ▼
+#   [finanzas-backend]   FastAPI (SIN puerto externo)
+#       │
+#       ▼
+#   [data/finanzas.db]   SQLite persistente
+#
+# El backend NUNCA es accesible desde fuera — solo interno.
+# NPM solo necesita apuntar al frontend en el puerto 8090.
+#
+# CONFIGURACIÓN:
+#   cp .env.example .env
+#   nano .env  → cambiar APP_DOMAIN por tu dominio/subdominio
+
+services:
+
+  backend:
+    build: ./backend
+    container_name: finanzas-backend
+    # Sin exposición de puertos al exterior — solo accesible por el frontend internamente
+    expose:
+      - "8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:///./data/finanzas.db
+      # Permitir peticiones desde el dominio que configures en NPM
+      - CORS_ORIGINS=http://${APP_DOMAIN:-localhost},https://${APP_DOMAIN:-localhost}
+    networks:
+      - finanzas_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      # /api → proxy interno nginx → backend (nunca expuesto al exterior)
+      args:
+        - VITE_API_URL=/api
+    container_name: finanzas-frontend
+    ports:
+      - "8090:80"    # NPM apunta a este puerto
+    networks:
+      - finanzas_net
+      # Descomentar si NPM corre como contenedor Docker en este mismo host:
+      # - npm_network
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  finanzas_net:
+    driver: bridge
+    name: finanzas_net
+
+  # Red externa de NPM — descomentar si NPM es Docker en este mismo host
+  # npm_network:
+  #   external: true
+  #   name: npm_default    # ← verificar el nombre real con: docker network ls

@@ -1,0 +1,371 @@
+"""
+FinanzasVH — API Backend
+FastAPI + SQLAlchemy + SQLite
+"""
+import os
+from typing import Optional
+from datetime import datetime
+from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
+
+import models
+from database import engine, get_db
+
+# ─── Crear tablas al iniciar ──────────────────────────────────
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI(
+    title="FinanzasVH API",
+    description="Sistema de gestión financiera personal",
+    version="2.0.0"
+)
+
+# ─── CORS — permite que el frontend React acceda ──────────────
+origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ═══════════════════════════════════════════════════════════════
+# SCHEMAS (Pydantic)
+# ═══════════════════════════════════════════════════════════════
+
+class TransactionIn(BaseModel):
+    date:        str
+    period:      str
+    description: str
+    amount:      float
+    type:        str
+    category:    str
+    account:     str
+    source:      Optional[str] = "manual"
+
+class TransactionOut(TransactionIn):
+    id:         int
+    created_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True
+
+class BudgetIn(BaseModel):
+    period:   str
+    category: str
+    amount:   float
+
+class BudgetOut(BudgetIn):
+    id: int
+    class Config:
+        from_attributes = True
+
+class ProfileIn(BaseModel):
+    name:               Optional[str]   = ""
+    income:             Optional[float] = 0.0
+    pay_day:            Optional[int]   = 1
+    accounts:           Optional[list]  = []
+    recurring_services: Optional[list]  = []
+    billing_cycles:     Optional[list]  = []
+    onboarding_done:    Optional[int]   = 0
+
+class ProfileOut(ProfileIn):
+    id: int
+    class Config:
+        from_attributes = True
+
+class ImportBatch(BaseModel):
+    transactions: list[TransactionIn]
+
+class BulkBudget(BaseModel):
+    period:  str
+    budgets: dict  # {category: amount}
+
+
+# ═══════════════════════════════════════════════════════════════
+# HEALTH
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "app": "FinanzasVH", "version": "2.0.0"}
+
+
+# ═══════════════════════════════════════════════════════════════
+# TRANSACTIONS
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/transactions", response_model=list[TransactionOut])
+def list_transactions(
+    period:  Optional[str] = Query(None, description="Filtrar por período YYYY-MM"),
+    type:    Optional[str] = Query(None, description="Filtrar por tipo"),
+    account: Optional[str] = Query(None, description="Filtrar por cuenta"),
+    db: Session = Depends(get_db)
+):
+    q = db.query(models.Transaction)
+    if period:  q = q.filter(models.Transaction.period == period)
+    if type:    q = q.filter(models.Transaction.type == type)
+    if account: q = q.filter(models.Transaction.account == account)
+    return q.order_by(models.Transaction.date.desc()).all()
+
+
+@app.post("/transactions", response_model=TransactionOut, status_code=201)
+def create_transaction(tx: TransactionIn, db: Session = Depends(get_db)):
+    obj = models.Transaction(**tx.model_dump())
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+@app.post("/transactions/import", status_code=201)
+def import_transactions(batch: ImportBatch, db: Session = Depends(get_db)):
+    """
+    Importación masiva con deduplicación.
+    Retorna cuántas se insertaron y cuántas se saltaron por duplicado.
+    """
+    inserted = 0
+    skipped  = 0
+
+    # Traer transacciones existentes para comparar
+    existing = db.query(models.Transaction).all()
+
+    for tx in batch.transactions:
+        # Verificar duplicado: misma fecha ±0, mismo monto, descripción similar
+        is_dup = any(
+            ex.date == tx.date
+            and abs(ex.amount - tx.amount) < 0.01
+            and _similar(ex.description, tx.description)
+            for ex in existing
+        )
+        if is_dup:
+            skipped += 1
+            continue
+
+        obj = models.Transaction(**tx.model_dump())
+        db.add(obj)
+        inserted += 1
+
+    db.commit()
+    return {
+        "message": f"{inserted} transacciones importadas, {skipped} omitidas por duplicado",
+        "inserted": inserted,
+        "skipped":  skipped
+    }
+
+
+@app.delete("/transactions/{tx_id}", status_code=204)
+def delete_transaction(tx_id: int, db: Session = Depends(get_db)):
+    obj = db.query(models.Transaction).filter(models.Transaction.id == tx_id).first()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+    db.delete(obj)
+    db.commit()
+
+
+@app.delete("/transactions/period/{period}", status_code=200)
+def delete_period(period: str, db: Session = Depends(get_db)):
+    """Elimina todas las transacciones de un período (útil para re-importar)."""
+    deleted = db.query(models.Transaction).filter(models.Transaction.period == period).delete()
+    db.commit()
+    return {"deleted": deleted, "period": period}
+
+
+@app.get("/transactions/periods")
+def list_periods(db: Session = Depends(get_db)):
+    """Lista todos los períodos disponibles con conteo de transacciones."""
+    from sqlalchemy import func as sqlfunc
+    rows = (
+        db.query(models.Transaction.period, sqlfunc.count(models.Transaction.id).label("count"))
+        .group_by(models.Transaction.period)
+        .order_by(models.Transaction.period.desc())
+        .all()
+    )
+    return [{"period": r.period, "count": r.count} for r in rows]
+
+
+# ═══════════════════════════════════════════════════════════════
+# BUDGETS
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/budgets/{period}")
+def get_budgets(period: str, db: Session = Depends(get_db)):
+    rows = db.query(models.Budget).filter(models.Budget.period == period).all()
+    return {r.category: r.amount for r in rows}
+
+
+@app.put("/budgets")
+def upsert_budgets(data: BulkBudget, db: Session = Depends(get_db)):
+    """Guarda o actualiza presupuesto completo de un período."""
+    for category, amount in data.budgets.items():
+        existing = (
+            db.query(models.Budget)
+            .filter(models.Budget.period == data.period, models.Budget.category == category)
+            .first()
+        )
+        if existing:
+            existing.amount = amount
+        else:
+            db.add(models.Budget(period=data.period, category=category, amount=amount))
+    db.commit()
+    return {"message": f"Presupuesto de {data.period} actualizado", "categories": len(data.budgets)}
+
+
+# ═══════════════════════════════════════════════════════════════
+# PROFILE
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/profile", response_model=ProfileOut)
+def get_profile(db: Session = Depends(get_db)):
+    profile = db.query(models.Profile).filter(models.Profile.id == 1).first()
+    if not profile:
+        # Primera ejecución — perfil vacío, el usuario lo configura desde la app
+        profile = models.Profile(
+            id=1,
+            name="",
+            income=0.0,
+            pay_day=1,
+            accounts=[],
+            recurring_services=[],
+            billing_cycles=[],
+            onboarding_done=0
+        )
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+    return profile
+
+
+@app.put("/profile", response_model=ProfileOut)
+def update_profile(data: ProfileIn, db: Session = Depends(get_db)):
+    profile = db.query(models.Profile).filter(models.Profile.id == 1).first()
+    if not profile:
+        profile = models.Profile(id=1)
+        db.add(profile)
+
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(profile, field, value)
+
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+# ═══════════════════════════════════════════════════════════════
+# EXPORT — Backup completo
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/export")
+def export_all(db: Session = Depends(get_db)):
+    """Descarga JSON completo de todos los datos (backup manual)."""
+    transactions = db.query(models.Transaction).order_by(models.Transaction.date).all()
+    profile      = db.query(models.Profile).filter(models.Profile.id == 1).first()
+
+    periods = list({t.period for t in transactions})
+    budgets = {}
+    for p in periods:
+        rows = db.query(models.Budget).filter(models.Budget.period == p).all()
+        budgets[p] = {r.category: r.amount for r in rows}
+
+    return {
+        "version": "2.0.0",
+        "exported_at": __import__("datetime").datetime.utcnow().isoformat(),
+        "transactions": [
+            {
+                "id": t.id, "date": t.date, "period": t.period,
+                "description": t.description, "amount": t.amount,
+                "type": t.type, "category": t.category,
+                "account": t.account, "source": t.source
+            }
+            for t in transactions
+        ],
+        "budgets": budgets,
+        "profile": {
+            "name":               profile.name               if profile else "",
+            "income":             profile.income             if profile else 0,
+            "pay_day":            profile.pay_day            if profile else 1,
+            "accounts":           profile.accounts           if profile else [],
+            "recurring_services": profile.recurring_services if profile else [],
+            "billing_cycles":     profile.billing_cycles     if profile else [],
+        }
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+# SETTINGS — Configuración personalizable
+# ═══════════════════════════════════════════════════════════════
+
+DEFAULT_ACCOUNTS = []          # El usuario agrega sus propias cuentas
+
+DEFAULT_CATEGORIES = {
+    "ingreso":        ["Sueldo","Honorarios","Transferencia recibida","Gratificación","CTS","Otro ingreso"],
+    "gasto_fijo":     ["Alquiler","Luz","Agua","Gas","Internet/Cable","Seguros","Suscripciones","Educación","Otro fijo"],
+    "gasto_variable": ["Alimentación","Transporte/Gasolina","Salud/Farmacia","Ropa","Ocio","Compras online","Restaurante","Otro variable"],
+    "deuda":          ["Préstamo","Cuota diferida","Tarjeta de crédito","Otra deuda"],
+    "ahorro":         ["Ahorro programado","Inversión","Fondo emergencia","Otro ahorro"],
+}
+
+DEFAULT_BILLING_CYCLES = []    # El usuario agrega sus propias tarjetas
+
+
+class SettingsIn(BaseModel):
+    accounts:       Optional[list] = None
+    custom_rules:   Optional[list] = None
+    billing_cycles: Optional[list] = None
+    categories:     Optional[dict] = None
+
+
+@app.get("/settings")
+def get_settings(db: Session = Depends(get_db)):
+    row = db.query(models.AppSettings).filter(models.AppSettings.id == 1).first()
+    if not row:
+        row = models.AppSettings(
+            id=1,
+            accounts=DEFAULT_ACCOUNTS,
+            custom_rules=[],
+            billing_cycles=DEFAULT_BILLING_CYCLES,
+            categories=DEFAULT_CATEGORIES,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return {
+        "accounts":       row.accounts or DEFAULT_ACCOUNTS,
+        "custom_rules":   row.custom_rules or [],
+        "billing_cycles": row.billing_cycles or DEFAULT_BILLING_CYCLES,
+        "categories":     row.categories or DEFAULT_CATEGORIES,
+    }
+
+
+@app.put("/settings")
+def save_settings(data: SettingsIn, db: Session = Depends(get_db)):
+    row = db.query(models.AppSettings).filter(models.AppSettings.id == 1).first()
+    if not row:
+        row = models.AppSettings(id=1)
+        db.add(row)
+    if data.accounts       is not None: row.accounts       = data.accounts
+    if data.custom_rules   is not None: row.custom_rules   = data.custom_rules
+    if data.billing_cycles is not None: row.billing_cycles = data.billing_cycles
+    if data.categories     is not None: row.categories     = data.categories
+    db.commit()
+    db.refresh(row)
+    return {"message": "Configuración guardada", "ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════
+# HELPERS INTERNOS
+# ═══════════════════════════════════════════════════════════════
+
+def _similar(a: str, b: str) -> bool:
+    """Compara dos descripciones y retorna True si son suficientemente similares."""
+    na = "".join(c for c in a.lower() if c.isalnum())
+    nb = "".join(c for c in b.lower() if c.isalnum())
+    if not na or not nb:
+        return False
+    longer  = na if len(na) >= len(nb) else nb
+    shorter = na if len(na) < len(nb)  else nb
+    matches = sum(1 for c in shorter if c in longer)
+    return (matches / len(longer)) >= 0.5
