@@ -58,3 +58,39 @@ class Profile(Base):
     billing_cycles      = Column(JSON, default=[])
     onboarding_done     = Column(Integer, default=0)               # 0=False, 1=True
     updated_at          = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class Investment(Base):
+    """
+    Portafolio de inversiones manual.
+    Cada fila = un activo (crypto o acción).
+    """
+    __tablename__ = "investments"
+
+    id          = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name        = Column(String(100), nullable=False)              # Ej. "Bitcoin", "Apple Inc."
+    ticker      = Column(String(20),  nullable=False)              # Ej. "BTC", "AAPL"
+    type        = Column(String(20),  nullable=False)              # crypto | stock
+    platform    = Column(String(30),  nullable=False)              # Binance | InteractiveBrokers
+    quantity    = Column(Float, nullable=False)                    # Cantidad de unidades
+    buy_price   = Column(Float, nullable=False)                    # Precio de compra (USD)
+    buy_date    = Column(String(10),  nullable=False)              # YYYY-MM-DD
+    notes       = Column(String(255), default="")
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class PortfolioSnapshot(Base):
+    """
+    Historial del valor del portafolio en el tiempo.
+    Se guarda cuando el usuario hace clic en 'Guardar snapshot'.
+    Permite ver la evolución histórica.
+    """
+    __tablename__ = "portfolio_snapshots"
+
+    id          = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    date        = Column(String(10), nullable=False, index=True)   # YYYY-MM-DD
+    total_usd   = Column(Float, nullable=False)
+    total_pen   = Column(Float, nullable=False)
+    exchange_rate = Column(Float, nullable=False)                  # USD/PEN al momento
+    detail      = Column(JSON, default=[])                         # [{ticker, qty, price_usd, value_usd}]
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())

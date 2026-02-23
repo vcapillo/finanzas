@@ -76,4 +76,24 @@ export const api = {
   // ─── Export / Backup ─────────────────────────────────────────
   exportAll: () =>
     request("GET", "/export"),
+
+  // ─── Investments ─────────────────────────────────────────────
+  getInvestments: () =>
+    request("GET", "/investments"),
+
+  createInvestment: (inv) =>
+    request("POST", "/investments", inv),
+
+  updateInvestment: (id, inv) =>
+    request("PUT", `/investments/${id}`, inv),
+
+  deleteInvestment: (id) =>
+    request("DELETE", `/investments/${id}`),
+
+  // ─── Portfolio snapshots ──────────────────────────────────────
+  getSnapshots: () =>
+    request("GET", "/investments/snapshots"),
+
+  saveSnapshot: (snapshot) =>
+    request("POST", "/investments/snapshots", snapshot),
 };

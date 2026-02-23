@@ -318,6 +318,31 @@ class SettingsIn(BaseModel):
     categories:     Optional[dict] = None
 
 
+# ─── Investment schemas ───────────────────────────────────────
+class InvestmentIn(BaseModel):
+    name:       str
+    ticker:     str
+    type:       str                    # crypto | stock
+    platform:   str                    # Binance | InteractiveBrokers
+    quantity:   float
+    buy_price:  float                  # USD
+    buy_date:   str
+    notes:      Optional[str] = ""
+
+class InvestmentOut(InvestmentIn):
+    id:         int
+    created_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True
+
+class SnapshotIn(BaseModel):
+    date:          str
+    total_usd:     float
+    total_pen:     float
+    exchange_rate: float
+    detail:        list               # [{ticker, qty, price_usd, value_usd}]
+
+
 @app.get("/settings")
 def get_settings(db: Session = Depends(get_db)):
     row = db.query(models.AppSettings).filter(models.AppSettings.id == 1).first()
@@ -353,6 +378,87 @@ def save_settings(data: SettingsIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(row)
     return {"message": "Configuración guardada", "ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════
+# INVESTMENTS — Portafolio manual
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/investments", response_model=list[InvestmentOut])
+def list_investments(db: Session = Depends(get_db)):
+    return db.query(models.Investment).order_by(models.Investment.buy_date.desc()).all()
+
+
+@app.post("/investments", response_model=InvestmentOut, status_code=201)
+def create_investment(inv: InvestmentIn, db: Session = Depends(get_db)):
+    obj = models.Investment(**inv.model_dump())
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+@app.put("/investments/{inv_id}", response_model=InvestmentOut)
+def update_investment(inv_id: int, inv: InvestmentIn, db: Session = Depends(get_db)):
+    obj = db.query(models.Investment).filter(models.Investment.id == inv_id).first()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Inversión no encontrada")
+    for field, value in inv.model_dump().items():
+        setattr(obj, field, value)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+@app.delete("/investments/{inv_id}", status_code=204)
+def delete_investment(inv_id: int, db: Session = Depends(get_db)):
+    obj = db.query(models.Investment).filter(models.Investment.id == inv_id).first()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Inversión no encontrada")
+    db.delete(obj)
+    db.commit()
+
+
+# ─── Snapshots de portafolio (evolución en el tiempo) ─────────
+
+@app.get("/investments/snapshots")
+def list_snapshots(db: Session = Depends(get_db)):
+    rows = (
+        db.query(models.PortfolioSnapshot)
+        .order_by(models.PortfolioSnapshot.date.asc())
+        .all()
+    )
+    return [
+        {
+            "id":            r.id,
+            "date":          r.date,
+            "total_usd":     r.total_usd,
+            "total_pen":     r.total_pen,
+            "exchange_rate": r.exchange_rate,
+            "detail":        r.detail,
+        }
+        for r in rows
+    ]
+
+
+@app.post("/investments/snapshots", status_code=201)
+def save_snapshot(data: SnapshotIn, db: Session = Depends(get_db)):
+    # Si ya existe un snapshot para la misma fecha, actualiza
+    existing = (
+        db.query(models.PortfolioSnapshot)
+        .filter(models.PortfolioSnapshot.date == data.date)
+        .first()
+    )
+    if existing:
+        existing.total_usd     = data.total_usd
+        existing.total_pen     = data.total_pen
+        existing.exchange_rate = data.exchange_rate
+        existing.detail        = data.detail
+    else:
+        obj = models.PortfolioSnapshot(**data.model_dump())
+        db.add(obj)
+    db.commit()
+    return {"message": f"Snapshot {data.date} guardado", "total_usd": data.total_usd}
 
 
 # ═══════════════════════════════════════════════════════════════
