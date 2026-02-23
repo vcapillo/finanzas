@@ -2042,7 +2042,18 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
                         {inv.curPrice!=null ? fmtUSD(inv.curPrice) : (
                           <input type="number" placeholder="precio"
                             style={{...s.input,width:80,padding:"2px 6px",fontSize:11}}
-                            onChange={e=>setManualPrices(p=>({...p,[inv.ticker]:parseFloat(e.target.value)||0}))}/>
+                            defaultValue={manualPrices[inv.ticker]||""}
+                            onBlur={e=>{
+                              const val=parseFloat(e.target.value);
+                              if (!isNaN(val)&&val>0) setManualPrices(p=>({...p,[inv.ticker]:val}));
+                            }}
+                            onKeyDown={e=>{
+                              if(e.key==="Enter"){
+                                const val=parseFloat(e.target.value);
+                                if(!isNaN(val)&&val>0) setManualPrices(p=>({...p,[inv.ticker]:val}));
+                                e.target.blur();
+                              }
+                            }}/>
                         )}
                       </td>
                       <td style={{padding:"10px",color:"#e0e0e8",fontWeight:600}}>{fmtUSD(inv.curValue)}</td>
