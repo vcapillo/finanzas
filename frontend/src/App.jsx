@@ -1532,35 +1532,97 @@ export default function App() {
         />}
 
         {/* ── PRESUPUESTO ───────────────────────────────────── */}
-        {tab==="presupuesto"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            <p style={{color:"#555",fontSize:12,margin:0}}>Presupuesto · {PERIOD_LABEL(period)} · Edita los montos directamente</p>
-            {catData.map(({cat,amount,type,color})=>{
-              const bud=budgets[cat]||0;
-              const pct2=bud>0?Math.min((amount/bud)*100,120):100;
-              const bc=pct2>100?"#ef4444":pct2>85?"#f59e0b":color;
-              return (
-                <div key={cat} style={s.card}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                    <span style={{fontSize:13,fontWeight:500,color:"#d0d0d8"}}>{cat} <Chip type={type}/></span>
-                    <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      <span style={{color:"#888",fontSize:12}}>Real: <b style={{color}}>{fmtN(amount)}</b></span>
-                      <span style={{color:"#333",fontSize:12}}>/ S/</span>
-                      <input type="number" value={bud||""} onChange={e=>saveBudget(cat,e.target.value)}
-                        style={{...s.input,width:80,textAlign:"right",padding:"3px 8px"}}/>
+        {tab==="presupuesto"&&(()=>{
+          // Construir lista completa de categorías de gasto:
+          // 1. Todas las de DEFAULT_CATEGORIES (excluyendo ingreso)
+          // 2. + las que tengan movimientos reales pero no estén en defaults
+          // 3. + las que tengan presupuesto definido
+          const budgetTypes = ["gasto_fijo","gasto_variable","deuda","ahorro"];
+          const allCats = new Map();
+
+          // Base: todas las categorías configuradas (siempre visibles)
+          budgetTypes.forEach(type=>{
+            const cats = (categories[type]||DEFAULT_CATEGORIES[type]||[]);
+            cats.forEach(cat=>{
+              if (!allCats.has(cat)) {
+                allCats.set(cat,{cat, amount:0, type, color:TYPE_CONFIG[type].color});
+              }
+            });
+          });
+
+          // Sobrescribir con datos reales si hay movimientos
+          catData.forEach(({cat,amount,type,color})=>{
+            allCats.set(cat,{cat,amount,type,color});
+          });
+
+          // Ordenar: primero los que tienen presupuesto definido, luego por monto desc
+          const sorted = [...allCats.values()].sort((a,b)=>{
+            const aBud = budgets[a.cat]||0;
+            const bBud = budgets[b.cat]||0;
+            if (aBud>0 && bBud===0) return -1;
+            if (bBud>0 && aBud===0) return 1;
+            return b.amount - a.amount;
+          });
+
+          return (
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <p style={{color:"#555",fontSize:12,margin:0}}>
+                  Presupuesto · {PERIOD_LABEL(period)} · Edita los montos directamente
+                </p>
+                <span style={{color:"#333",fontSize:11}}>
+                  {Object.keys(budgets).filter(k=>budgets[k]>0).length} categorías con meta definida
+                </span>
+              </div>
+
+              {sorted.map(({cat,amount,type,color})=>{
+                const bud=budgets[cat]||0;
+                const pct2=bud>0?Math.min((amount/bud)*100,120):0;
+                const bc=pct2>100?"#ef4444":pct2>85?"#f59e0b":color;
+                const sinMov=amount===0;
+                return (
+                  <div key={cat} style={{...s.card, opacity: sinMov&&bud===0 ? 0.5 : 1}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                      <span style={{fontSize:13,fontWeight:500,color: sinMov?"#555":"#d0d0d8"}}>
+                        {cat} <Chip type={type}/>
+                      </span>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <span style={{color:"#888",fontSize:12}}>
+                          Real: <b style={{color: sinMov?"#333":color}}>{fmtN(amount)}</b>
+                        </span>
+                        <span style={{color:"#333",fontSize:12}}>/ S/</span>
+                        <input
+                          type="number"
+                          value={bud||""}
+                          placeholder="—"
+                          onChange={e=>saveBudget(cat,e.target.value)}
+                          style={{...s.input,width:80,textAlign:"right",padding:"3px 8px"}}
+                        />
+                      </div>
+                    </div>
+                    <div style={{background:"#0a0a0c",borderRadius:4,height:5,overflow:"hidden"}}>
+                      <div style={{
+                        background: bud>0 ? bc : "#1a1a20",
+                        width:`${Math.min(pct2,100)}%`,
+                        height:"100%",borderRadius:4,transition:"width .3s"
+                      }}/>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+                      <span style={{color:"#2a2a30",fontSize:10}}>
+                        {sinMov ? "sin movimientos" : ""}
+                      </span>
+                      {bud>0&&(
+                        <span style={{color:pct2>100?"#ef4444":pct2>85?"#f59e0b":"#444",fontSize:11}}>
+                          {Math.round(pct2)}%{pct2>100?" ⚠️ EXCEDIDO":""}
+                        </span>
+                      )}
                     </div>
                   </div>
-                  <div style={{background:"#0a0a0c",borderRadius:4,height:5,overflow:"hidden"}}>
-                    <div style={{background:bc,width:`${Math.min(pct2,100)}%`,height:"100%",borderRadius:4,transition:"width .3s"}}/>
-                  </div>
-                  {bud>0&&<div style={{color:pct2>100?"#ef4444":pct2>85?"#f59e0b":"#444",fontSize:11,textAlign:"right",marginTop:4}}>
-                    {Math.round(pct2)}%{pct2>100?" ⚠️ EXCEDIDO":""}
-                  </div>}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* ── CALENDARIO ────────────────────────────────────── */}
         {tab==="calendario"&&profile&&(
