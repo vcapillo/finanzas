@@ -9,9 +9,9 @@ from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
-
 import models
 from database import engine, get_db
+from routers import patrimonio, ingesta
 
 # ─── Crear tablas al iniciar ──────────────────────────────────
 models.Base.metadata.create_all(bind=engine)
@@ -19,7 +19,7 @@ models.Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="FinanzasVH API",
     description="Sistema de gestión financiera personal",
-    version="2.0.0"
+    version="3.0.0"
 )
 
 # ─── CORS — permite que el frontend React acceda ──────────────
@@ -31,7 +31,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+app.include_router(patrimonio.router)
+app.include_router(ingesta.router)
 
 # ═══════════════════════════════════════════════════════════════
 # SCHEMAS (Pydantic)
@@ -91,7 +92,7 @@ class BulkBudget(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "app": "FinanzasVH", "version": "2.0.0"}
+    return {"status": "ok", "app": "FinanzasVH", "version": "3.0.0"}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -271,7 +272,7 @@ def export_all(db: Session = Depends(get_db)):
         budgets[p] = {r.category: r.amount for r in rows}
 
     return {
-        "version": "2.0.0",
+        "version": "3.0.0",
         "exported_at": __import__("datetime").datetime.utcnow().isoformat(),
         "transactions": [
             {

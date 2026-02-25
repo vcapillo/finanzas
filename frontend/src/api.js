@@ -99,4 +99,59 @@ export const api = {
 
   deleteSnapshot: (id) =>
     request("DELETE", `/investments/snapshots/${id}`),
+
+  // ═══════════════════════════════════════════════════════════════
+  // v3.0 — Patrimonio Consolidado
+  // ═══════════════════════════════════════════════════════════════
+
+  // GET /v3/patrimonio/consolidado
+  getPatrimonioConsolidado: () =>
+    request("GET", "/v3/patrimonio/consolidado"),
+
+  // GET /v3/patrimonio/historial
+  getHistorialPatrimonio: () =>
+    request("GET", "/v3/patrimonio/historial"),
+
+  // GET /v3/patrimonio/tasa-cambio
+  getTasaCambio: () =>
+    request("GET", "/v3/patrimonio/tasa-cambio"),
+
+  // POST /v3/patrimonio/snapshot?asset_id=X&balance=Y&source=Z
+  saveAssetSnapshot: (assetId, balance, source = "MANUAL") =>
+    request("POST", `/v3/patrimonio/snapshot?asset_id=${assetId}&balance=${balance}&source=${source}`),
+
+  // ─── v3.0: Ingesta IA ────────────────────────────────────────
+
+  // POST /v3/ingesta/extracto  { asset_id, period, raw_text }
+  ingestarExtracto: (payload) =>
+    request("POST", "/v3/ingesta/extracto", payload),
+
+  // GET /v3/ingesta/duplicados?status=PENDING
+  getDuplicados: (status = "PENDING") =>
+    request("GET", `/v3/ingesta/duplicados?status=${status}`),
+
+  // POST /v3/ingesta/duplicados/:id/revisar  { action: "APPROVE"|"REJECT" }
+  revisarDuplicado: (id, action) =>
+    request("POST", `/v3/ingesta/duplicados/${id}/revisar`, { action }),
+
+  // POST /v3/ingesta/duplicados/revisar-todos  { action }
+  revisarTodosDuplicados: (action) =>
+    request("POST", "/v3/ingesta/duplicados/revisar-todos", { action }),
+
+  // ═══════════════════════════════════════════════════════════════
+  // Métodos genéricos — compatibilidad con componentes v3
+  // Permiten llamadas estilo: api.get("/v3/...") y api.post("/v3/...", body)
+  // ═══════════════════════════════════════════════════════════════
+
+  get: (path) =>
+    request("GET", path),
+
+  post: (path, body = null, opts = {}) => {
+    // Soporte para params tipo axios: api.post("/ruta", null, { params: { key: val } })
+    if (opts.params) {
+      const qs = new URLSearchParams(opts.params).toString();
+      return request("POST", `${path}?${qs}`, body);
+    }
+    return request("POST", path, body);
+  },
 };

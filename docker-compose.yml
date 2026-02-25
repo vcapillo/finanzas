@@ -40,6 +40,9 @@ services:
       - DATABASE_URL=sqlite:///./data/finanzas.db
       # Permitir peticiones desde el dominio que configures en NPM
       - CORS_ORIGINS=http://${APP_DOMAIN:-localhost},https://${APP_DOMAIN:-localhost}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}            # NUEVO
+      - DEDUP_THRESHOLD=0.75                        # NUEVO
+      - EXCHANGE_RATE_FALLBACK=3.70                 # NUEVO
     networks:
       - finanzas_net
     restart: unless-stopped

@@ -1,10 +1,21 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
-import './index.css'
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App.jsx";
+import LoginScreen, { useAuth } from "./LoginScreen.jsx";
+import "./index.css";
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+function Root() {
+  const { authed, login, logout } = useAuth();
+
+  if (!authed) {
+    return <LoginScreen onLogin={login} />;
+  }
+
+  return <App onLogout={logout} />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <Root />
   </React.StrictMode>
-)
+);

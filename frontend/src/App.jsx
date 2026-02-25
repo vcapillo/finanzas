@@ -14,6 +14,9 @@ import {
   TrendingUp, TrendingDown, DollarSign, BarChart2, Edit2, Save
 } from "lucide-react";
 import { api } from "./api.js";
+// ── v3.0: Nuevos módulos de Patrimonio e Ingesta IA ──────────
+import PatrimonioConsolidado from "./components/patrimonio/PatrimonioConsolidado";
+import IngestaExtracto       from "./components/ingesta/IngestaExtracto";
 
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTES FIJAS
@@ -1131,15 +1134,17 @@ function Importer({ onImport, existingTransactions=[], profile={}, customRules=[
 // APP PRINCIPAL
 // ═══════════════════════════════════════════════════════════════
 const TABS=[
-  {id:"dashboard",   icon:<LayoutDashboard size={15}/>, label:"Dashboard"},
-  {id:"movimientos", icon:<List size={15}/>,            label:"Movimientos"},
-  {id:"importar",    icon:<Upload size={15}/>,          label:"Importar", badge:"NUEVO"},
-  {id:"presupuesto", icon:<Target size={15}/>,          label:"Presupuesto"},
-  {id:"calendario",  icon:<Calendar size={15}/>,        label:"Calendario"},
-  {id:"inversiones", icon:<TrendingUp size={15}/>,      label:"Inversiones"},
+  {id:"dashboard",    icon:<LayoutDashboard size={15}/>, label:"Dashboard"},
+  {id:"movimientos",  icon:<List size={15}/>,            label:"Movimientos"},
+  {id:"importar",     icon:<Upload size={15}/>,          label:"Importar"},
+  {id:"presupuesto",  icon:<Target size={15}/>,          label:"Presupuesto"},
+  {id:"calendario",   icon:<Calendar size={15}/>,        label:"Calendario"},
+  {id:"inversiones",  icon:<TrendingUp size={15}/>,      label:"Inversiones"},
+  {id:"patrimonio",   icon:<DollarSign size={15}/>,      label:"Patrimonio",  badge:"v3"},
+  {id:"ingesta_ia",   icon:<Zap size={15}/>,             label:"Ingesta IA",  badge:"v3"},
 ];
 
-export default function App() {
+export default function App({ onLogout }) {
   const [tab,setTab]           = useState("dashboard");
   const [transactions,setTransactions] = useState([]);
   const [budgets,setBudgets]   = useState({});
@@ -1416,7 +1421,7 @@ export default function App() {
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{background:"linear-gradient(135deg,#22c55e,#16a34a)",borderRadius:9,padding:"7px 9px",fontSize:18}}>💼</div>
           <div>
-            <div style={{fontSize:15,fontWeight:700,letterSpacing:"-0.3px"}}>FinanzasVH <span style={{color:"#22c55e",fontSize:10}}>v2.0</span></div>
+            <div style={{fontSize:15,fontWeight:700,letterSpacing:"-0.3px"}}>FinanzasVH <span style={{color:"#22c55e",fontSize:10}}>v3.0</span></div>
             <div style={{color:"#444",fontSize:10}}>{profile?.name||"Mi sistema financiero"} · {PERIOD_LABEL(period)}</div>
           </div>
         </div>
@@ -1432,6 +1437,14 @@ export default function App() {
             style={{...s.btn,background:"#1a1a20",color:"#888",border:"1px solid #2a2a30",padding:"6px 10px",display:"flex",alignItems:"center",gap:4}}>
             <Download size={13}/>
           </button>
+          {onLogout && (
+            <button onClick={()=>{ if(window.confirm('¿Cerrar sesión?')) onLogout(); }}
+              title="Cerrar sesión"
+              style={{...s.btn,background:"#1a1a20",color:"#555",border:"1px solid #2a2a30",
+                padding:"6px 10px",display:"flex",alignItems:"center",gap:4,fontSize:12}}>
+              🔒
+            </button>
+          )}
           <button onClick={()=>setShowSettingsPanel(true)} title="Configuración"
             style={{...s.btn,background:customRules.length>0?"rgba(34,197,94,0.12)":"#1a1a20",
               color:customRules.length>0?"#22c55e":"#888",
@@ -1802,6 +1815,31 @@ export default function App() {
             onDelete={removeInvestment}
             onSaveSnapshot={addSnapshot}
             onDeleteSnapshot={removeSnapshot}
+          />
+        )}
+
+        {/* ── PATRIMONIO CONSOLIDADO (v3.0) ─────────────────── */}
+        {tab==="patrimonio"&&(
+          <PatrimonioConsolidado />
+        )}
+
+        {/* ── INGESTA IA (v3.0) ─────────────────────────────── */}
+        {tab==="ingesta_ia"&&(
+          <IngestaExtracto
+            onImport={handleImport}
+            classify={classify}
+            customRules={customRules}
+            activeAccounts={activeAccounts}
+            categories={categories}
+            existingTransactions={transactions}
+            onSaveRule={async (rule) => {
+              const newCfg = {
+                ...settings,
+                custom_rules: [...(settings?.custom_rules || []), rule],
+              };
+              await saveSettings(newCfg);
+              showToast(`✓ Regla "${rule.label}" guardada`);
+            }}
           />
         )}
       </div>
