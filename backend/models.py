@@ -17,8 +17,9 @@ class Transaction(Base):
     type        = Column(String(30),  nullable=False)              # ingreso | gasto_fijo | ...
     category    = Column(String(80),  nullable=False)
     account     = Column(String(50),  nullable=False)
-    source      = Column(String(20),  default="manual")            # manual | import_text | import_csv | seed
-    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    source               = Column(String(20),  default="manual")   # manual | import_text | import_csv | seed
+    excluir_del_analisis = Column(Boolean, default=False)              # True para transferencias internas (no afectan métricas)
+    created_at           = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class Budget(Base):
@@ -43,7 +44,8 @@ class AppSettings(Base):
 
     id              = Column(Integer, primary_key=True, default=1)
     accounts        = Column(JSON, default=[])   # [{name, type, color, active}]
-    custom_rules    = Column(JSON, default=[])   # [{pattern, type, category, account, label}]
+    custom_rules    = Column(JSON, default=[])   # [{label, pattern, type, category, prioridad, activa, es_movimiento_interno}]
+    system_rules    = Column(JSON, default=[])   # Reglas del sistema (editables, igual formato que custom_rules)
     billing_cycles  = Column(JSON, default=[])   # [{name, cutDay, dueDay, account}]
     categories      = Column(JSON, default={})   # {ingreso:[...], gasto_fijo:[...], ...}
     updated_at      = Column(DateTime(timezone=True), onupdate=func.now())

@@ -65,35 +65,67 @@ Si hay colisión, añade: "duplicate_score": 0.0, "duplicate_reasoning": "..."
 
 # ── CLASIFICADOR LOCAL (fallback sin Gemini) ──────────────────
 
-_LOCAL_RULES = [
-    # (patrón regex, type, category, merchant_clean)
-    (r"SUELDO|REMUNERACION|HABERES|MINEDU",          "INGRESO",              "Sueldo",              None),
-    (r"GRATIFICACION",                                "INGRESO",              "Gratificación",       None),
-    (r"CTS\b",                                        "INGRESO",              "CTS",                 None),
-    (r"BM\.?\s*PAGO.?TARJET",                         "TRANSFERENCIA_INTERNA","Pago tarjeta propia", "BBVA"),
-    (r"OPENPAY.*CANASTO|CANASTO",                     "GASTO",                "Supermercado",        "Canasto"),
-    (r"IKF|INKAFARMA",                                "GASTO",                "Salud",               "InkaFarma"),
-    (r"MIFARMA|FASA",                                 "GASTO",                "Salud",               "Mifarma"),
-    (r"CORPORACION.LA.C|CHALUPA",                     "GASTO",                "Alimentación",        "La Chalupa"),
-    (r"WONG|VIVANDA",                                 "GASTO",                "Supermercado",        "Wong"),
-    (r"PLAZA.?VEA|SPSA|PVEA",                         "GASTO",                "Supermercado",        "Plaza Vea"),
-    (r"METRO\b|CENCOSUD",                             "GASTO",                "Supermercado",        "Metro"),
-    (r"TOTTUS",                                       "GASTO",                "Supermercado",        "Tottus"),
-    (r"MASS\b|TAMBO",                                 "GASTO",                "Supermercado",        "Mass/Tambo"),
-    (r"NETFLIX",                                      "GASTO",                "Suscripciones",       "Netflix"),
-    (r"SPOTIFY",                                      "GASTO",                "Suscripciones",       "Spotify"),
-    (r"APPLE\b|APPLE\.COM",                           "GASTO",                "Suscripciones",       "Apple"),
-    (r"ENEL|LUZ.DEL.SUR",                             "GASTO",                "Servicios",           "Enel"),
-    (r"SEDAPAL",                                      "GASTO",                "Servicios",           "Sedapal"),
-    (r"CLARO|MOVISTAR|ENTEL",                         "GASTO",                "Servicios",           None),
-    (r"UBER|CABIFY|INDRIVER",                         "GASTO",                "Transporte",          None),
-    (r"PRIMAX|REPSOL|PECSA|GRIFO",                    "GASTO",                "Gasolina",            None),
-    (r"PACIFICO|RIMAC|MAPFRE",                        "GASTO",                "Seguros",             None),
-    (r"KFC|MC.?DONALD|BEMBOS|PIZZA|RESTAURAN|CHIFA",  "GASTO",               "Restaurante",         None),
-    (r"SAGA|FALABELLA|RIPLEY|OECHSLE|ZARA",           "GASTO",                "Ropa",                None),
-    (r"AMAZON|MERCADO.?LIBRE",                        "GASTO",                "Compras online",      None),
-    (r"AGORA",                                        "TRANSFERENCIA_INTERNA","Ahorro programado",   "Agora"),
+# Reglas locales base — se combinan con las reglas de configuración en tiempo de ejecución
+# Este array solo se usa como FALLBACK cuando no hay reglas en BD
+_FALLBACK_RULES = [
+    # (patrón regex, type, category, merchant_clean, es_movimiento_interno)
+    (r"SUELDO|REMUNERACION|HABERES|MINEDU",          "INGRESO",              "Sueldo",              None,         False),
+    (r"GRATIFICACION",                                "INGRESO",              "Gratificación",       None,         False),
+    (r"CTS\b",                                        "INGRESO",              "CTS",                 None,         False),
+    (r"BM\.?\s*PAGO.?TARJET",                         "GASTO",               "Tarjeta BBVA",        "BBVA",       False),
+    (r"OPENPAY.*CANASTO|CANASTO",                     "GASTO",                "Supermercado",        "Canasto",    False),
+    (r"IKF|INKAFARMA",                                "GASTO",                "Salud/Farmacia",      "InkaFarma",  False),
+    (r"MIFARMA|FASA",                                 "GASTO",                "Salud/Farmacia",      "Mifarma",    False),
+    (r"CORPORACION.LA.C|CHALUPA",                     "GASTO",                "Alimentación",        "La Chalupa", False),
+    (r"WONG|VIVANDA",                                 "GASTO",                "Alimentación",        "Wong",       False),
+    (r"PLAZA.?VEA|SPSA|PVEA",                         "GASTO",                "Alimentación",        "Plaza Vea",  False),
+    (r"METRO\b|CENCOSUD",                             "GASTO",                "Alimentación",        "Metro",      False),
+    (r"TOTTUS",                                       "GASTO",                "Alimentación",        "Tottus",     False),
+    (r"MASS\b|TAMBO",                                 "GASTO",                "Alimentación",        "Mass/Tambo", False),
+    (r"NETFLIX",                                      "GASTO",                "Suscripciones",       "Netflix",    False),
+    (r"SPOTIFY",                                      "GASTO",                "Suscripciones",       "Spotify",    False),
+    (r"APPLE\b|APPLE\.COM",                           "GASTO",                "Suscripciones",       "Apple",      False),
+    (r"ENEL|LUZ.DEL.SUR",                             "GASTO",                "Servicios",           "Enel",       False),
+    (r"SEDAPAL",                                      "GASTO",                "Servicios",           "Sedapal",    False),
+    (r"CLARO|MOVISTAR|ENTEL",                         "GASTO",                "Servicios",           None,         False),
+    (r"UBER|CABIFY|INDRIVER",                         "GASTO",                "Transporte",          None,         False),
+    (r"PRIMAX|REPSOL|PECSA|GRIFO",                    "GASTO",                "Gasolina",            None,         False),
+    (r"PACIFICO|RIMAC|MAPFRE",                        "GASTO",                "Seguros",             None,         False),
+    (r"KFC|MC.?DONALD|BEMBOS|PIZZA|RESTAURAN|CHIFA",  "GASTO",               "Restaurante",         None,         False),
+    (r"SAGA|FALABELLA|RIPLEY|OECHSLE|ZARA",           "GASTO",                "Ropa",                None,         False),
+    (r"AMAZON|MERCADO.?LIBRE",                        "GASTO",                "Compras online",      None,         False),
+    (r"AGORA",                                        "TRANSFERENCIA_INTERNA","Ahorro programado",   "Agora",      True),
 ]
+
+
+def _build_local_rules(settings_rules: list = None) -> list:
+    """
+    Combina las reglas de configuración (desde BD) con las reglas fallback.
+    Las reglas de configuración tienen MAYOR prioridad.
+    Retorna lista de tuplas (pattern, type, category, merchant, es_movimiento_interno).
+    """
+    combined = []
+
+    if settings_rules:
+        # Filtrar solo activas, ordenar por prioridad (menor = primero)
+        active = sorted(
+            [r for r in settings_rules if r.get("activa", True)],
+            key=lambda r: r.get("prioridad", 50)
+        )
+        for rule in active:
+            combined.append((
+                rule.get("pattern", ""),
+                rule.get("type", "GASTO").upper() if rule.get("type") not in ("INGRESO","GASTO","TRANSFERENCIA_INTERNA","COMISION") else rule.get("type", "GASTO"),
+                rule.get("category", ""),
+                rule.get("label"),
+                rule.get("es_movimiento_interno", False),
+            ))
+
+    # Agregar fallback solo para patrones que no estén en las reglas de configuración
+    if not settings_rules:
+        combined.extend(_FALLBACK_RULES)
+
+    return combined
 
 _DATE_PATS = [
     re.compile(r"^(\d{2})[/\-](\d{2})[/\-](\d{4})"),   # DD/MM/YYYY
@@ -120,22 +152,27 @@ def _parse_date(token: str):
                 pass
     return None
 
-def _classify_local(description: str, amount: float):
-    """Aplica reglas locales → (type, category, merchant_clean)."""
+def _classify_local(description: str, amount: float, rules: list = None):
+    """Aplica reglas dinámicas → (type, category, merchant_clean, es_movimiento_interno)."""
+    active_rules = rules if rules is not None else _FALLBACK_RULES
     desc_up = description.upper()
-    for pattern, txtype, cat, merchant in _LOCAL_RULES:
+    for item in active_rules:
+        pattern = item[0]; txtype = item[1]; cat = item[2]; merchant = item[3]
+        es_interno = item[4] if len(item) > 4 else False
         if re.search(pattern, desc_up):
-            return txtype, cat, merchant or description[:40]
+            return txtype, cat, merchant or description[:40], es_interno
     # Fallback por monto
     if amount > 0:
-        return "INGRESO", "Otro ingreso", description[:40]
-    return "GASTO", "Otro gasto", description[:40]
+        return "INGRESO", "Otro ingreso", description[:40], False
+    return "GASTO", "Otro gasto", description[:40], False
 
-def _local_parse(raw_text: str, period: str) -> dict:
+def _local_parse(raw_text: str, period: str, settings_rules: list = None) -> dict:
     """
     Parser local basado en regex — no necesita Gemini.
     Lee línea a línea buscando fecha + descripción + monto.
+    Acepta reglas dinámicas desde la configuración del usuario.
     """
+    active_rules = _build_local_rules(settings_rules)
     transactions = []
     lines = raw_text.splitlines()
 
@@ -175,23 +212,24 @@ def _local_parse(raw_text: str, period: str) -> dict:
         if len(description) < 2:
             continue
 
-        # Clasificar
-        txtype, category, merchant = _classify_local(description, amount)
+        # Clasificar con reglas dinámicas
+        txtype, category, merchant, es_interno = _classify_local(description, amount, active_rules)
         # Signo: positivo = ingreso, negativo = gasto
         if txtype == "INGRESO" and amount < 0:
             amount = abs(amount)
-        elif txtype == "GASTO" and amount > 0:
+        elif txtype in ("GASTO", "TRANSFERENCIA_INTERNA") and amount > 0:
             amount = -amount
 
         transactions.append({
-            "date":               iso_date,
-            "description":        description,
-            "merchant_clean":     merchant,
-            "amount":             round(amount, 2),
-            "currency":           "PEN",
-            "type":               txtype,
-            "category_suggestion": category,
-            "confidence":         0.75,
+            "date":                  iso_date,
+            "description":           description,
+            "merchant_clean":        merchant,
+            "amount":                round(amount, 2),
+            "currency":              "PEN",
+            "type":                  txtype,
+            "category_suggestion":   category,
+            "confidence":            0.75,
+            "es_movimiento_interno": es_interno,
         })
 
     total_in  = sum(t["amount"] for t in transactions if t["amount"] > 0)

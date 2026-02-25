@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 import models
 from database import engine, get_db
-from routers import patrimonio, ingesta, transferencias, analytics
+from routers import patrimonio, ingesta
 
 # ─── Crear tablas al iniciar ──────────────────────────────────
 models.Base.metadata.create_all(bind=engine)
@@ -33,8 +33,6 @@ app.add_middleware(
 )
 app.include_router(patrimonio.router)
 app.include_router(ingesta.router)
-app.include_router(transferencias.router)
-app.include_router(analytics.router)
 
 # ═══════════════════════════════════════════════════════════════
 # SCHEMAS (Pydantic)
@@ -337,17 +335,12 @@ DEFAULT_SYSTEM_RULES = [
     {"label":"Luz Enel",            "pattern":"ENEL|LUZ.DEL.SUR",                                "type":"gasto_fijo",    "category":"Luz",                "prioridad":10,"activa":True,"es_movimiento_interno":False},
     {"label":"Agua Sedapal",        "pattern":"SEDAPAL",                                         "type":"gasto_fijo",    "category":"Agua",               "prioridad":10,"activa":True,"es_movimiento_interno":False},
     {"label":"Internet / Telefónía","pattern":"CLARO|MOVISTAR|ENTEL",                             "type":"gasto_fijo",    "category":"Internet/Cable",    "prioridad":10,"activa":True,"es_movimiento_interno":False},
-    {"label":"Pago Tarjeta BBVA",   "pattern":"BM\.?\\s*PAGO.?TARJET|PAGO.*TARJETA.*BBVA|Pago de Tarjeta de Cr|Tarjeta de Cr.dito", "type":"deuda", "category":"Tarjeta BBVA", "prioridad":5, "activa":True,"es_movimiento_interno":True},
-    {"label":"Pago Tarjeta iO",     "pattern":"PAGO.*IO|IO.*PAGO",                               "type":"deuda",         "category":"Tarjeta iO",        "prioridad":5, "activa":True,"es_movimiento_interno":True},
+    {"label":"Pago Tarjeta BBVA",   "pattern":"BM\\.?\\s*PAGO.?TARJET|PAGO.*TARJETA.*BBVA",       "type":"deuda",         "category":"Tarjeta BBVA",      "prioridad":5, "activa":True,"es_movimiento_interno":False},
+    {"label":"Pago Tarjeta iO",     "pattern":"PAGO.*IO|IO.*PAGO",                               "type":"deuda",         "category":"Tarjeta iO",        "prioridad":5, "activa":True,"es_movimiento_interno":False},
     {"label":"Sueldo MINEDU",       "pattern":"SUELDO|REMUNERACION|HABERES|MINEDU",              "type":"ingreso",       "category":"Sueldo",            "prioridad":1, "activa":True,"es_movimiento_interno":False},
     {"label":"Gratificación",       "pattern":"GRATIFICACION",                                   "type":"ingreso",       "category":"Gratificación",     "prioridad":1, "activa":True,"es_movimiento_interno":False},
     {"label":"CTS",                 "pattern":"CTS\\b",                                           "type":"ingreso",       "category":"CTS",               "prioridad":1, "activa":True,"es_movimiento_interno":False},
-    {"label":"Agora Ahorro",        "pattern":"AGORA",                                           "type":"ahorro",        "category":"Ahorro programado", "prioridad":5, "activa":True,"es_movimiento_interno":False},
-    {"label":"Financiera Efectiva", "pattern":"FINANCIERA EFECTIVA|FIN.?EFECTIVA",               "type":"ahorro",        "category":"Ahorro programado", "prioridad":5, "activa":True,"es_movimiento_interno":False},
-    {"label":"Jennifer - Hogar",    "pattern":"Jennifer.*Teran|Jennifer Ter",                     "type":"gasto_fijo",    "category":"Hogar",             "prioridad":3, "activa":True,"es_movimiento_interno":False},
-    {"label":"Transferencia BCP",   "pattern":"Transferencia a BCP Digital",                     "type":"gasto_variable","category":"Movimiento interno","prioridad":3, "activa":True,"es_movimiento_interno":True},
-    {"label":"Rebote BBVA->BCP",    "pattern":"TRANSF\\.BCO\\.BBVA",                              "type":"ingreso",       "category":"Movimiento interno","prioridad":3, "activa":True,"es_movimiento_interno":True},
-    {"label":"BCP->BBVA debito",    "pattern":"BANCO DE CREDITO D|TRAN\\.CTAS\\.TERC\\.BM",    "type":"gasto_variable","category":"Movimiento interno","prioridad":3, "activa":True,"es_movimiento_interno":True},
+    {"label":"Agora Ahorro",        "pattern":"AGORA",                                           "type":"ahorro",        "category":"Ahorro programado", "prioridad":5, "activa":True,"es_movimiento_interno":True},
     {"label":"Restaurantes / Chifa","pattern":"RESTAURAN|KFC|MC.?DONALD|BEMBOS|PIZZA|BUFFET|DON BUFFET|CHIFA|PARRI","type":"gasto_variable","category":"Restaurante","prioridad":10,"activa":True,"es_movimiento_interno":False},
     {"label":"Ropa / Tiendas",      "pattern":"SAGA|FALABELLA|RIPLEY|ZARA|OECHSLE",              "type":"gasto_variable","category":"Ropa",                "prioridad":10,"activa":True,"es_movimiento_interno":False},
     {"label":"Compras online",      "pattern":"AMAZON|MERCADO.?LIBRE|LINIO",                     "type":"gasto_variable","category":"Compras online",     "prioridad":10,"activa":True,"es_movimiento_interno":False},
