@@ -1,13 +1,63 @@
 /**
- * FinanzasVH v3.0 — IngestaExtracto.jsx  (Actualizado v3.1)
- * Previsualización completa + guardado + edición de categorías + creación de reglas con IA
- * v3.1: Detección automática de transferencias internas + espejo InternalTransfer
- * Mismo estilo y flujo que el Importer (App.jsx)
+ * FinanzasVH v3.1 — IngestaExtracto.jsx  (Módulo Unificado: Importar + Ingesta IA)
+ * OBS-05: Unificación de módulos Importar e Ingesta IA
+ * - Modo texto (PDF pegado) + Modo CSV
+ * - Toggle "Usar IA" on/off: OFF = clasificación por reglas; ON = Gemini para sin match
+ * - Panel de ciclos de facturación integrado
+ * - Detección automática de transferencias internas
  */
-import { useEffect, useState, useCallback } from "react";
-import { Zap, CheckCircle2, AlertTriangle, Settings, Plus, X, ArrowRight } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Zap, CheckCircle2, AlertTriangle, Settings, Plus, X, ArrowRight, Upload, FileSpreadsheet, FileText } from "lucide-react";
 import { api } from "../../api.js";
 import BandejaDuplicados from "./BandejaDuplicados.jsx";
+import * as XLSX from "xlsx";
+
+// ── Extractor de texto PDF vía pdfjs CDN (lazy load) ─────────
+let _pdfjsLoaded = false;
+async function loadPdfJs() {
+  if (_pdfjsLoaded) return window.pdfjsLib;
+  await new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  _pdfjsLoaded = true;
+  return window.pdfjsLib;
+}
+
+async function extractTextFromPDF(arrayBuffer) {
+  const pdfjs = await loadPdfJs();
+  const pdf   = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+  const pages = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page    = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    // Reconstruir líneas aproximadas agrupando por Y
+    const byY = {};
+    content.items.forEach(item => {
+      const y = Math.round(item.transform[5]);
+      if (!byY[y]) byY[y] = [];
+      byY[y].push({ x: item.transform[4], str: item.str });
+    });
+    const lines = Object.keys(byY)
+      .sort((a, b) => b - a)  // orden descendente Y = top→bottom
+      .map(y => byY[y].sort((a, b) => a.x - b.x).map(i => i.str).join("  "));
+    pages.push(lines.join("\n"));
+  }
+  return pages.join("\n");
+}
+
+// ── Parser Excel (xlsx) → texto CSV simulado → parseCSVRaw ───
+function parseXLSXBuffer(arrayBuffer, bankHint) {
+  const wb  = XLSX.read(new Uint8Array(arrayBuffer), { type:"array", cellDates:true });
+  const ws  = wb.Sheets[wb.SheetNames[0]];
+  // Convertir a CSV con delimitador punto y coma
+  const csv = XLSX.utils.sheet_to_csv(ws, { FS:";", blankrows:false });
+  return parseCSVRaw(csv, bankHint);
+}
 
 // ── Estilos coherentes con App.jsx ────────────────────────────
 const s = {
@@ -55,6 +105,87 @@ const fmt  = n => `S/ ${Math.abs(n).toLocaleString("es-PE",{minimumFractionDigit
 
 function compilePattern(p) {
   try { return new RegExp(p, "i"); } catch { return null; }
+}
+
+// ── Parsers locales (sin llamada a IA) ───────────────────────
+// Parsea texto de extracto bancario (PDF copiado) → array de {date,period,description,amount,source}
+function parseTextRaw(rawText, bankHint="auto") {
+  const lines = rawText.split(/\n/).map(l => l.trim()).filter(Boolean);
+  const results = [];
+  const datePatterns = [
+    /^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/,
+    /^(\d{2})[\/\-](\d{2})[\/\-](\d{2})\b/,
+    /^(\d{4})[\/\-](\d{2})[\/\-](\d{2})/,
+  ];
+  for (const line of lines) {
+    let isoDate = null, rest = line;
+    for (const pat of datePatterns) {
+      const m = line.match(pat);
+      if (m) {
+        let [, d, mo, y] = m;
+        if (pat === datePatterns[2]) { y = d; d = m[3]; }
+        if (y.length === 2) y = "20" + y;
+        isoDate = `${y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`;
+        rest = line.slice(m[0].length).trim();
+        break;
+      }
+    }
+    if (!isoDate) continue;
+    let amount = null, description = rest;
+    const twoAmt = rest.match(/^(.+?)\s+(-?[\d,\.]+)\s+(-?[\d,\.]+)\s*$/);
+    if (twoAmt) {
+      const [, desc, deb, hab] = twoAmt;
+      const d2 = parseFloat(deb.replace(/,/g, "")), h = parseFloat(hab.replace(/,/g, ""));
+      description = desc.trim(); amount = h > 0 ? h : -d2;
+    } else {
+      const s = rest.match(/^(.+?)\s+S?\/? ?(-?[\d,\.]+)\s*$/);
+      if (s) {
+        const [, desc, amtStr] = s;
+        description = desc.trim(); amount = parseFloat(amtStr.replace(/,/g, ""));
+        if (bankHint === "BBVA" && !/(INGRESO|CREDITO|ABONO|SUELDO|REMUNER)/i.test(description)) amount = -Math.abs(amount);
+      }
+    }
+    if (!amount || isNaN(amount) || description.length < 3) continue;
+    results.push({ date: isoDate, period: isoDate.substring(0, 7), description, amount, source: "import_text" });
+  }
+  return results;
+}
+
+// Parsea CSV bancario → array de {date,period,description,amount,source}
+function parseCSVRaw(text, bankHint="auto") {
+  const lines = text.split(/\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const sep = lines[0].includes(";") ? ";" : ",";
+  const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/"/g, ""));
+  const colMap = {};
+  headers.forEach((h, i) => {
+    if (/fecha|date/i.test(h))                                     colMap.date   = i;
+    if (/descripci|operaci|concepto|detail|desc/i.test(h))         colMap.desc   = i;
+    if (/monto|importe|amount|valor/i.test(h) && !colMap.amount)   colMap.amount = i;
+    if (/cargo|debito|debe|debit/i.test(h))                        colMap.debit  = i;
+    if (/abono|credito|haber|credit/i.test(h))                     colMap.credit = i;
+  });
+  const results = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(sep).map(c => c.trim().replace(/"/g, ""));
+    const dateRaw = colMap.date !== undefined ? cols[colMap.date] : "";
+    const desc    = colMap.desc !== undefined ? cols[colMap.desc] : cols[1] || "";
+    let amount = 0;
+    if (colMap.debit !== undefined || colMap.credit !== undefined) {
+      const deb  = parseFloat((cols[colMap.debit]  || "0").replace(/[,\s]/g, "")) || 0;
+      const cred = parseFloat((cols[colMap.credit] || "0").replace(/[,\s]/g, "")) || 0;
+      amount = cred > 0 ? cred : -deb;
+    } else if (colMap.amount !== undefined) {
+      amount = parseFloat((cols[colMap.amount] || "0").replace(/[,\s]/g, "")) || 0;
+      if (bankHint === "BBVA" && !/(INGRESO|CREDITO|ABONO|SUELDO)/i.test(desc)) amount = -Math.abs(amount);
+    }
+    if (!dateRaw || isNaN(amount) || !desc) continue;
+    let isoDate = dateRaw;
+    const dm = dateRaw.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{2,4})/);
+    if (dm) { const [, d, m2, y] = dm; isoDate = `${y.length === 2 ? "20" + y : y}-${m2}-${d}`; }
+    results.push({ date: isoDate, period: isoDate.substring(0, 7), description: desc, amount, source: "import_csv" });
+  }
+  return results;
 }
 
 // Convierte una tx de Gemini al formato interno del Importer
@@ -132,6 +263,7 @@ export default function IngestaExtracto({
   categories: propsCats = {},
   existingTransactions = [],
   onSaveRule,
+  billingCycles        = [],      // ← OBS-05: ciclos de facturación para mostrar en panel
 }) {
   const categories = Object.keys(propsCats).length > 0 ? propsCats : DEFAULT_CATEGORIES;
 
@@ -184,6 +316,87 @@ export default function IngestaExtracto({
 
   const [editingDescIdx, setEditingDescIdx] = useState(null);
 
+  // ── OBS-05: estados para modo unificado ───────────────────────
+  const [inputMode,   setInputMode]   = useState("text");  // "text" | "csv" | "pdf" | "xlsx"
+  const [useAI,       setUseAI]       = useState(true);    // true = Gemini; false = solo reglas
+  const [bankHint,    setBankHint]    = useState("auto");  // "auto" | "BBVA" | "BCP" | "YAPE"
+  const [fileLoading, setFileLoading] = useState(false);   // spinner mientras extrae texto PDF/xlsx
+  const [fileInfo,    setFileInfo]    = useState(null);    // { name, rows? }
+  const csvRef  = useRef();
+  const pdfRef  = useRef();
+  const xlsxRef = useRef();
+
+  // ── Función auxiliar: clasificar array de rawItems ──────────
+  const classifyItems = useCallback((rawItems, srcAccount) => {
+    return rawItems.map(tx => {
+      const cl = classify
+        ? classify(tx.description, tx.amount)
+        : { type:"gasto_variable", category:"Otro variable", confidence:"manual", ruleName:"", isInternal:false };
+      return {
+        ...tx,
+        description:    cl.ruleName || tx.description,
+        rawDescription: tx.description,
+        type:      cl.type, category:  cl.category, confidence: cl.confidence,
+        ruleName:  cl.ruleName || "", isInternal: cl.isInternal || false,
+        account:   srcAccount, destAssetId: null,
+        excluded:  cl.isInternal || false, isDup: false,
+      };
+    });
+  }, [classify]);
+
+  // ── Handler PDF upload ─────────────────────────────────────
+  const handlePDFFile = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    if (!sourceAccount) { alert("Selecciona una cuenta antes de procesar."); if (e.target) e.target.value=""; return; }
+    setFileLoading(true);
+    setPreview([]); setAiResult(null); setImportResult(null); setEditIdx(null); setFileInfo(null);
+    try {
+      const buf  = await file.arrayBuffer();
+      const text = await extractTextFromPDF(buf);
+      if (!text || text.trim().length < 20) {
+        alert("⚠️ El PDF no contiene texto extraíble (puede ser escaneado). Usa \"Pegar texto\" en su lugar.");
+        return;
+      }
+      const rawItems = parseTextRaw(text, bankHint);
+      if (rawItems.length === 0) {
+        setRawText(text);
+        setInputMode("text");
+        alert("⚠️ Texto extraído pero no se detectaron transacciones automáticamente. Revisa el texto en modo \"Pegar texto\".");
+        return;
+      }
+      setPreview(markDups(classifyItems(rawItems, sourceAccount)));
+      setFileInfo({ name: file.name, rows: rawItems.length });
+    } catch (err) {
+      alert("❌ Error al leer el PDF: " + err.message + ". Intenta con \"Pegar texto\".");
+    } finally {
+      setFileLoading(false);
+      if (e.target) e.target.value = "";
+    }
+  };
+
+  // ── Handler Excel upload ──────────────────────────────────
+  const handleXLSXFile = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    if (!sourceAccount) { alert("Selecciona una cuenta antes de procesar."); if (e.target) e.target.value=""; return; }
+    setFileLoading(true);
+    setPreview([]); setAiResult(null); setImportResult(null); setEditIdx(null); setFileInfo(null);
+    try {
+      const buf   = await file.arrayBuffer();
+      const items = parseXLSXBuffer(buf, bankHint);
+      if (items.length === 0) {
+        alert("⚠️ No se detectaron transacciones en el Excel. Verifica que la primera hoja tenga columnas: Fecha, Descripción, Monto.");
+        return;
+      }
+      setPreview(markDups(classifyItems(items, sourceAccount)));
+      setFileInfo({ name: file.name, rows: items.length });
+    } catch (err) {
+      alert("❌ Error al leer el Excel: " + err.message);
+    } finally {
+      setFileLoading(false);
+      if (e.target) e.target.value = "";
+    }
+  };
+
   const descSimilar = (a, b) => {
     const na = a.toLowerCase().replace(/[^a-z0-9]/g, "");
     const nb = b.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -202,6 +415,49 @@ export default function IngestaExtracto({
       descSimilar(ex.description, tx.description)
     ),
   })).map(tx => ({ ...tx, excluded: tx.excluded || tx.isDup }));
+
+  // ── Flujo SIN IA: parseo local + clasificación por reglas ───────────
+  const handleParseLocal = (csvContent = null) => {
+    if (!sourceAccount) { alert("Selecciona una cuenta antes de procesar."); return; }
+    const rawItems = csvContent
+      ? parseCSVRaw(csvContent, bankHint)
+      : parseTextRaw(rawText, bankHint);
+    if (rawItems.length === 0) {
+      alert("No se pudieron detectar transacciones. Verifica el formato del extracto.");
+      return;
+    }
+    const classified = rawItems.map(tx => {
+      const cl = classify ? classify(tx.description, tx.amount) : { type:"gasto_variable", category:"Otro variable", confidence:"manual", ruleName:"", isInternal:false };
+      const displayDescription = cl.ruleName || tx.description;
+      return {
+        ...tx,
+        description:    displayDescription,
+        rawDescription: tx.description,
+        type:      cl.type,
+        category:  cl.category,
+        confidence: cl.confidence,
+        ruleName:   cl.ruleName || "",
+        isInternal: cl.isInternal || false,
+        account:    sourceAccount,
+        destAssetId: null,
+        excluded:   cl.isInternal || false,
+        isDup:      false,
+      };
+    });
+    setPreview(markDups(classified));
+    setAiResult(null);
+    setImportResult(null);
+    setEditIdx(null);
+    setShowBandeja(false);
+  };
+
+  // Manejador CSV para modo local
+  const handleCSVFile = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => handleParseLocal(ev.target.result);
+    reader.readAsText(file, "latin1");
+  };
 
   const handleSubmit = async () => {
     if (!sourceAccount) { alert("Selecciona una cuenta antes de procesar."); return; }
@@ -342,7 +598,8 @@ export default function IngestaExtracto({
   const totalToSave = toImport.length + internalsReady.length;
 
   const charColor  = rawText.length > 8000 ? "#f87171" : rawText.length > 4000 ? "#f59e0b" : "#444";
-  const canSubmit  = !loading && !!sourceAccount && rawText.trim().length > 0;
+  // Solo "text" requiere rawText; csv/pdf/xlsx procesan el archivo directamente
+  const canSubmit  = !loading && !fileLoading && !!sourceAccount && (inputMode !== "text" || rawText.trim().length > 0);
 
   // ─────────────────────────────────────────────────────────
   return (
@@ -358,14 +615,88 @@ export default function IngestaExtracto({
         <div style={{ background:"rgba(34,197,94,0.15)", borderRadius:10, padding:"10px 12px", fontSize:22, flexShrink:0 }}>📥</div>
         <div>
           <div style={{ fontWeight:700, fontSize:15, color:"#f0f0f2", display:"flex", alignItems:"center", gap:8 }}>
-            Ingesta IA — Gemini
-            <span style={{ background:"rgba(34,197,94,0.2)", color:"#22c55e", fontSize:9, padding:"1px 6px", borderRadius:3, fontWeight:700 }}>v3</span>
+            📥 Importar / Ingestar
+            <span style={{ background:"rgba(34,197,94,0.2)", color:"#22c55e", fontSize:9, padding:"1px 6px", borderRadius:3, fontWeight:700 }}>v3.1</span>
           </div>
           <div style={{ color:"#555", fontSize:12, marginTop:3 }}>
-            Pega el texto de tu extracto · Gemini clasifica · Revisa, edita y guarda la carga · Crea reglas para comercios nuevos.
+            Texto · CSV · PDF · Excel · Clasificación por reglas · Opcional: Gemini para sin match · Revisa y guarda.
           </div>
         </div>
       </div>
+
+      {/* ── OBS-05: PANEL DE CICLOS DE FACTURACIÓN ──────────── */}
+      {billingCycles.length > 0 && (
+        <div style={{
+          background:"rgba(167,139,250,0.04)",
+          border:"1px solid rgba(167,139,250,0.2)",
+          borderRadius:12,
+          padding:"14px 18px",
+        }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+            <span style={{ fontSize:15 }}>📅</span>
+            <span style={{ color:"#a78bfa", fontWeight:700, fontSize:12, letterSpacing:"0.5px" }}>CICLOS DE FACTURACIÓN</span>
+            <span style={{ color:"#444", fontSize:11, marginLeft:4 }}>— referencia al importar extractos de tarjetas</span>
+          </div>
+          <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+            {billingCycles.map((c, i) => {
+              const now     = new Date();
+              const today   = now.getDate();
+              const daysToVence = c.dueDay >= today
+                ? c.dueDay - today
+                : (new Date(now.getFullYear(), now.getMonth() + 1, c.dueDay) - now) / 86400000;
+              const urgente = daysToVence <= 5;
+              return (
+                <div key={i} style={{
+                  background:"#0a0a0c",
+                  border:`1px solid ${urgente ? "rgba(239,68,68,0.35)" : "rgba(167,139,250,0.2)"}`,
+                  borderLeft:`3px solid ${urgente ? "#ef4444" : "#a78bfa"}`,
+                  borderRadius:8,
+                  padding:"10px 14px",
+                  minWidth:200,
+                  flex:"1 1 auto",
+                }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+                    <span style={{ color:"#d0d0d8", fontWeight:700, fontSize:13 }}>💳 {c.name}</span>
+                    {urgente && (
+                      <span style={{ background:"rgba(239,68,68,0.12)", color:"#ef4444", fontSize:10, padding:"2px 7px", borderRadius:4, fontWeight:700 }}>
+                        ⚡ Vence en {Math.ceil(daysToVence)}d
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display:"flex", gap:14 }}>
+                    <div>
+                      <div style={{ color:"#555", fontSize:10, marginBottom:2 }}>CORTE</div>
+                      <div style={{ color:"#a78bfa", fontWeight:700, fontSize:15 }}>día {c.cutDay}</div>
+                    </div>
+                    <div style={{ width:1, background:"#1e1e26", alignSelf:"stretch" }}/>
+                    <div>
+                      <div style={{ color:"#555", fontSize:10, marginBottom:2 }}>VENCIMIENTO</div>
+                      <div style={{ color: urgente ? "#ef4444" : "#f87171", fontWeight:700, fontSize:15 }}>día {c.dueDay}</div>
+                    </div>
+                    {c.account && (
+                      <>
+                        <div style={{ width:1, background:"#1e1e26", alignSelf:"stretch" }}/>
+                        <div>
+                          <div style={{ color:"#555", fontSize:10, marginBottom:2 }}>CUENTA</div>
+                          <div style={{ color:"#888", fontSize:12 }}>{c.account}</div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div style={{ marginTop:8, padding:"5px 8px", background:"rgba(167,139,250,0.06)", borderRadius:5 }}>
+                    <span style={{ color:"#444", fontSize:10 }}>
+                      Ciclo de compras: del día {c.cutDay + 1} al {c.cutDay} del mes siguiente
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ marginTop:10, color:"#333", fontSize:11 }}>
+            💡 Las transacciones del extracto se asignan al mes real de la compra, no al mes del extracto.
+          </div>
+        </div>
+      )}
 
       {/* ── FORMULARIO ───────────────────────────────────────── */}
       <div style={s.card}>
@@ -414,32 +745,174 @@ export default function IngestaExtracto({
           )}
         </div>
 
-        <div style={{ marginBottom:14 }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-            <label style={{ ...s.label, marginBottom:0 }}>📋 PEGA EL TEXTO DE TU EXTRACTO</label>
-            <span style={{ color:charColor, fontSize:11 }}>{rawText.length.toLocaleString()} caracteres</span>
-          </div>
-          <textarea
-            value={rawText}
-            onChange={e => { setRawText(e.target.value); setPreview([]); setAiResult(null); setImportResult(null); }}
-            placeholder={"Ejemplo BBVA:\n31/10/2025  *COLEGIO GRACIAS JESUS         -440.00\n17/11/2025  *A/PH4ta MINISTERIO DE EDUCACION  7,066.56\n03/11/2025  *MOVISTAR CUENTA FINANCIERA        -59.90\n\nGemini parsea el formato automáticamente."}
-            style={{ ...s.input, minHeight:200, resize:"vertical", fontFamily:"'DM Mono','Courier New',monospace", fontSize:12, lineHeight:1.7 }}
-          />
+        {/* ── OBS-05: Toggle modo entrada + toggle IA ──────────────── */}
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+          {/* Modo de entrada */}
+          {[
+            ["text",  "📋 Pegar texto"],
+            ["csv",   "📊 CSV"],
+            ["pdf",   "📄 PDF"],
+            ["xlsx",  "📊 Excel"],
+          ].map(([m, etq]) => (
+            <button key={m} onClick={() => { setInputMode(m); setPreview([]); setImportResult(null); setFileInfo(null); }}
+              style={{ ...s.btn, padding:"6px 14px", fontSize:12,
+                background: inputMode === m ? "rgba(34,197,94,0.12)" : "#0a0a0c",
+                color:      inputMode === m ? "#22c55e" : "#666",
+                border:     `1px solid ${inputMode === m ? "rgba(34,197,94,0.35)" : "#2a2a30"}`
+              }}>{etq}</button>
+          ))}
+          <div style={{ width:1, height:22, background:"#2a2a30", marginInline:4 }}/>
+          {/* Toggle IA */}
+          <button onClick={() => setUseAI(u => !u)}
+            title={useAI ? "Gemini clasifica los sin match de regla" : "Solo reglas: más rápido, sin API"}
+            style={{ ...s.btn, padding:"6px 14px", fontSize:12, display:"flex", alignItems:"center", gap:5,
+              background: useAI ? "rgba(167,139,250,0.12)" : "#0a0a0c",
+              color:      useAI ? "#a78bfa" : "#555",
+              border:     `1px solid ${useAI ? "rgba(167,139,250,0.35)" : "#2a2a30"}`
+            }}>
+            <Zap size={12}/>
+            {useAI ? "IA activa" : "Solo reglas"}
+          </button>
+          {/* Hint banco */}
+          <select value={bankHint} onChange={e => setBankHint(e.target.value)}
+            title="Ayuda a interpretar el signo de los montos"
+            style={{ ...s.select, width:"auto", padding:"6px 10px", fontSize:11, color:"#666" }}>
+            <option value="auto">Banco: Auto</option>
+            <option value="BBVA">BBVA</option>
+            <option value="BCP">BCP</option>
+            <option value="YAPE">YAPE</option>
+          </select>
         </div>
 
-        <div style={{ display:"flex", justifyContent:"flex-end" }}>
-          <button onClick={handleSubmit} disabled={!canSubmit}
-            style={{ ...s.btn,
-              background: canSubmit ? "linear-gradient(135deg,#22c55e,#16a34a)" : "#1a1a20",
-              color:      canSubmit ? "#fff" : "#444",
-              display:"flex", alignItems:"center", gap:8, padding:"10px 22px",
-            }}>
-            {loading
-              ? <><span style={{ display:"inline-block" }}>⟳</span> Procesando con Gemini…</>
-              : <><Zap size={14}/> Procesar extracto</>
-            }
-          </button>
-        </div>
+        {/* Nota del modo activo */}
+        {!useAI && (
+          <div style={{ background:"rgba(56,189,248,0.05)", border:"1px solid rgba(56,189,248,0.2)", borderRadius:8, padding:"8px 12px", marginBottom:12, fontSize:11, color:"#38bdf8" }}>
+            💡 <strong>Modo Reglas:</strong> Clasificación instantánea con tus reglas personales y del sistema. Sin consumo de API.
+          </div>
+        )}
+        {useAI && (
+          <div style={{ background:"rgba(167,139,250,0.05)", border:"1px solid rgba(167,139,250,0.2)", borderRadius:8, padding:"8px 12px", marginBottom:12, fontSize:11, color:"#a78bfa" }}>
+            ✨ <strong>Modo IA:</strong> Las transacciones con match de regla se clasifican automáticamente. Las sin match van a Gemini.
+          </div>
+        )}
+
+        {/* Área de entrada: texto o CSV */}
+        {inputMode === "text" && (
+          <div style={{ marginBottom:14 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+              <label style={{ ...s.label, marginBottom:0 }}>📋 PEGA EL TEXTO DE TU EXTRACTO</label>
+              <span style={{ color:charColor, fontSize:11 }}>{rawText.length.toLocaleString()} caracteres</span>
+            </div>
+            <textarea
+              value={rawText}
+              onChange={e => { setRawText(e.target.value); setPreview([]); setAiResult(null); setImportResult(null); }}
+              placeholder={"Ejemplo BBVA:\n31/10/2025  *COLEGIO GRACIAS JESUS         -440.00\n17/11/2025  *A/PH4ta MINISTERIO DE EDUCACION  7,066.56\n03/11/2025  *MOVISTAR CUENTA FINANCIERA        -59.90"}
+              style={{ ...s.input, minHeight:200, resize:"vertical", fontFamily:"'DM Mono','Courier New',monospace", fontSize:12, lineHeight:1.7 }}
+            />
+          </div>
+        )}
+
+        {inputMode === "csv" && (
+          <div style={{ marginBottom:14 }}>
+            <label style={s.label}>📊 IMPORTAR ARCHIVO CSV</label>
+            <div
+              onClick={() => csvRef.current && csvRef.current.click()}
+              style={{ border:"2px dashed #2a2a30", borderRadius:8, padding:"32px 20px", textAlign:"center", cursor:"pointer",
+                background:"#0a0a0c"
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor="rgba(34,197,94,0.5)"}
+              onMouseLeave={e => e.currentTarget.style.borderColor="#2a2a30"}
+            >
+              <Upload size={28} color="#444" style={{ marginBottom:10, display:"block", margin:"0 auto 10px" }}/>
+              <div style={{ color:"#555", fontSize:13 }}>Haz clic para seleccionar archivo CSV</div>
+              <div style={{ color:"#333", fontSize:11, marginTop:6 }}>Separador coma o punto y coma · Encoding latin1/UTF-8</div>
+            </div>
+            <input ref={csvRef} type="file" accept=".csv,.txt" style={{ display:"none" }}
+              onChange={e => { handleCSVFile(e); e.target.value=""; }}/>
+          </div>
+        )}
+
+        {/* PDF upload */}
+        {inputMode === "pdf" && (
+          <div style={{ marginBottom:14 }}>
+            <label style={s.label}>📄 IMPORTAR PDF BANCARIO</label>
+            {fileInfo && (
+              <div style={{ background:"rgba(34,197,94,0.07)", border:"1px solid rgba(34,197,94,0.2)", borderRadius:6, padding:"6px 12px", marginBottom:8, fontSize:11, color:"#22c55e" }}>
+                ✅ <strong>{fileInfo.name}</strong> — {fileInfo.rows} transacciones detectadas
+              </div>
+            )}
+            <div
+              onClick={() => !fileLoading && pdfRef.current && pdfRef.current.click()}
+              style={{ border:"2px dashed #2a2a30", borderRadius:8, padding:"32px 20px", textAlign:"center",
+                cursor: fileLoading ? "wait" : "pointer", background:"#0a0a0c",
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor="rgba(239,68,68,0.5)"}
+              onMouseLeave={e => e.currentTarget.style.borderColor="#2a2a30"}
+            >
+              {fileLoading
+                ? <><div style={{ color:"#f87171", fontSize:22, marginBottom:8 }}>⏳</div><div style={{ color:"#f87171", fontSize:13 }}>Extrayendo texto del PDF…</div></>
+                : <><div style={{ color:"#f87171", fontSize:28, marginBottom:8 }}>📄</div>
+                   <div style={{ color:"#555", fontSize:13 }}>Haz clic para seleccionar archivo PDF</div>
+                   <div style={{ color:"#333", fontSize:11, marginTop:6 }}>El sistema extrae el texto automáticamente · PDF nativo (no escaneado)</div>
+                  </>
+              }
+            </div>
+            <input ref={pdfRef} type="file" accept=".pdf" style={{ display:"none" }} onChange={handlePDFFile}/>
+            <div style={{ marginTop:8, color:"#444", fontSize:10 }}>
+              💡 Si el PDF es escaneado (imagen), usa el modo <strong style={{color:"#888"}}>📋 Pegar texto</strong> copiando el contenido manualmente.
+            </div>
+          </div>
+        )}
+
+        {/* Excel upload */}
+        {inputMode === "xlsx" && (
+          <div style={{ marginBottom:14 }}>
+            <label style={s.label}>📊 IMPORTAR EXCEL (.xlsx / .xls)</label>
+            {fileInfo && (
+              <div style={{ background:"rgba(34,197,94,0.07)", border:"1px solid rgba(34,197,94,0.2)", borderRadius:6, padding:"6px 12px", marginBottom:8, fontSize:11, color:"#22c55e" }}>
+                ✅ <strong>{fileInfo.name}</strong> — {fileInfo.rows} transacciones detectadas
+              </div>
+            )}
+            <div
+              onClick={() => !fileLoading && xlsxRef.current && xlsxRef.current.click()}
+              style={{ border:"2px dashed #2a2a30", borderRadius:8, padding:"32px 20px", textAlign:"center",
+                cursor: fileLoading ? "wait" : "pointer", background:"#0a0a0c",
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor="rgba(34,197,94,0.5)"}
+              onMouseLeave={e => e.currentTarget.style.borderColor="#2a2a30"}
+            >
+              {fileLoading
+                ? <><div style={{ color:"#22c55e", fontSize:22, marginBottom:8 }}>⏳</div><div style={{ color:"#22c55e", fontSize:13 }}>Procesando Excel…</div></>
+                : <><div style={{ color:"#22c55e", fontSize:28, marginBottom:8 }}>📊</div>
+                   <div style={{ color:"#555", fontSize:13 }}>Haz clic para seleccionar archivo Excel</div>
+                   <div style={{ color:"#333", fontSize:11, marginTop:6 }}>.xlsx · .xls · Primera hoja activa · Columnas: Fecha, Descripción, Monto</div>
+                  </>
+              }
+            </div>
+            <input ref={xlsxRef} type="file" accept=".xlsx,.xls" style={{ display:"none" }} onChange={handleXLSXFile}/>
+          </div>
+        )}
+
+        {/* Botón de acción: solo visible en modo texto (CSV/PDF/XLSX procesan al seleccionar archivo) */}
+        {inputMode === "text" && (
+          <div style={{ display:"flex", justifyContent:"flex-end" }}>
+            <button
+              onClick={() => useAI ? handleSubmit() : handleParseLocal()}
+              disabled={!canSubmit}
+              style={{ ...s.btn,
+                background: canSubmit ? (useAI ? "linear-gradient(135deg,#a78bfa,#7c3aed)" : "linear-gradient(135deg,#22c55e,#16a34a)") : "#1a1a20",
+                color: canSubmit ? "#fff" : "#444",
+                display:"flex", alignItems:"center", gap:8, padding:"10px 22px",
+              }}>
+              {loading
+                ? <><span style={{ display:"inline-block" }}>⟳</span> Procesando con Gemini…</>
+                : useAI
+                  ? <><Zap size={14}/> Analizar con IA</>
+                  : <><Upload size={14}/> Analizar extracto</>
+              }
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── RESULTADO ────────────────────────────────────────── */}

@@ -1156,12 +1156,11 @@ function Importer({ onImport, existingTransactions=[], profile={}, customRules=[
 const TABS=[
   {id:"dashboard",    icon:<LayoutDashboard size={15}/>, label:"Dashboard"},
   {id:"movimientos",  icon:<List size={15}/>,            label:"Movimientos"},
-  {id:"importar",     icon:<Upload size={15}/>,          label:"Importar"},
+  {id:"importar",     icon:<Upload size={15}/>,          label:"Importar / IA", badge:"v3.1"},
   {id:"presupuesto",  icon:<Target size={15}/>,          label:"Presupuesto"},
   {id:"calendario",   icon:<Calendar size={15}/>,        label:"Calendario"},
   {id:"inversiones",  icon:<TrendingUp size={15}/>,      label:"Inversiones"},
   {id:"patrimonio",   icon:<DollarSign size={15}/>,      label:"Patrimonio",  badge:"v3"},
-  {id:"ingesta_ia",   icon:<Zap size={15}/>,             label:"Ingesta IA",  badge:"v3"},
 ];
 
 export default function App({ onLogout }) {
@@ -1818,14 +1817,23 @@ export default function App({ onLogout }) {
           </div>
         )}
 
-        {/* ── IMPORTAR ──────────────────────────────────────── */}
-        {tab==="importar"&&<Importer
+        {/* ── IMPORTAR / INGESTA IA (v3.1) ─────────────────── */}
+        {tab==="importar"&&<IngestaExtracto
           onImport={handleImport}
-          existingTransactions={transactions}
-          profile={{...(profile||{}), billing_cycles: billingCycles}}
+          classify={classify}
           customRules={customRules}
           activeAccounts={activeAccounts}
           categories={categories}
+          existingTransactions={transactions}
+          billingCycles={billingCycles}
+          onSaveRule={async (rule) => {
+            const newCfg = {
+              ...settings,
+              custom_rules: [...(settings?.custom_rules || []), rule],
+            };
+            await saveSettings(newCfg);
+            showToast(`✓ Regla "${rule.label}" guardada`);
+          }}
         />}
 
         {/* ── PRESUPUESTO ───────────────────────────────────── */}
@@ -1907,25 +1915,7 @@ export default function App({ onLogout }) {
           <PatrimonioConsolidado />
         )}
 
-        {/* ── INGESTA IA (v3.0) ─────────────────────────────── */}
-        {tab==="ingesta_ia"&&(
-          <IngestaExtracto
-            onImport={handleImport}
-            classify={classify}
-            customRules={customRules}
-            activeAccounts={activeAccounts}
-            categories={categories}
-            existingTransactions={transactions}
-            onSaveRule={async (rule) => {
-              const newCfg = {
-                ...settings,
-                custom_rules: [...(settings?.custom_rules || []), rule],
-              };
-              await saveSettings(newCfg);
-              showToast(`✓ Regla "${rule.label}" guardada`);
-            }}
-          />
-        )}
+        {/* OBS-05: ingesta_ia unificado en tab importar — este bloque ya no existe */}
       </div>
     </div>
   );
@@ -2041,6 +2031,35 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
     {name:"🪙 Crypto", value:parseFloat(cryptoUSD.toFixed(2)), color:"#f59e0b"},
     {name:"📈 Acciones",value:parseFloat(stockUSD.toFixed(2)),  color:"#38bdf8"},
   ].filter(d=>d.value>0);
+
+  // ── Consolidado por ticker (PPP) — OBS-06 ─────────────────
+  // Agrupa todas las compras del mismo ticker para el widget Top Activos
+  const consolidatedByTicker = Object.values(
+    enriched.reduce((acc, inv) => {
+      const t = inv.ticker;
+      if (!acc[t]) {
+        acc[t] = {
+          ticker:    t,
+          name:      inv.name,
+          type:      inv.type,
+          totalQty:  0,
+          totalCost: 0,
+          curPrice:  inv.curPrice,
+        };
+      }
+      acc[t].totalQty  += inv.quantity;
+      acc[t].totalCost += inv.costBasis;
+      // Tomar el precio actual del último registro con precio disponible
+      if (inv.curPrice != null) acc[t].curPrice = inv.curPrice;
+      return acc;
+    }, {})
+  ).map(c => {
+    const ppp      = c.totalQty > 0 ? c.totalCost / c.totalQty : 0;  // Precio Promedio Ponderado
+    const curValue = c.curPrice != null ? c.totalQty * c.curPrice : null;
+    const pnl      = curValue != null ? curValue - c.totalCost : null;
+    const pnlPct   = pnl != null && c.totalCost > 0 ? (pnl / c.totalCost) * 100 : null;
+    return { ...c, ppp, curValue, pnl, pnlPct };
+  });
 
   // ── Snapshot ───────────────────────────────────────────────
   const handleSnapshot = async () => {
@@ -2346,16 +2365,23 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
           <div style={s.card}>
             <p style={{color:"#555",fontSize:11,fontWeight:600,margin:"0 0 14px",letterSpacing:"0.5px"}}>TOP ACTIVOS POR VALOR</p>
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={enriched.sort((a,b)=>(b.curValue??0)-(a.curValue??0)).slice(0,6)} layout="vertical">
-                <XAxis type="number" tick={{fill:"#444",fontSize:10}} tickFormatter={v=>`$${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false}/>
-                <YAxis type="category" dataKey="ticker" tick={{fill:"#888",fontSize:11}} width={50} axisLine={false} tickLine={false}/>
-                <Tooltip content={<TTipUSD/>}/>
-                <Bar dataKey="curValue" name="Valor USD" radius={[0,4,4,0]}>
-                  {enriched.slice(0,6).map((e,i)=>(
-                    <Cell key={i} fill={e.type==="crypto"?"#f59e0b":"#38bdf8"}/>
-                  ))}
-                </Bar>
-              </BarChart>
+              {(()=>{
+                const topData = [...consolidatedByTicker]
+                  .sort((a,b)=>(b.curValue??0)-(a.curValue??0))
+                  .slice(0,6);
+                return (
+                  <BarChart data={topData} layout="vertical">
+                    <XAxis type="number" tick={{fill:"#444",fontSize:10}} tickFormatter={v=>`${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false}/>
+                    <YAxis type="category" dataKey="ticker" tick={{fill:"#888",fontSize:11}} width={50} axisLine={false} tickLine={false}/>
+                    <Tooltip content={<TTipUSD/>}/>
+                    <Bar dataKey="curValue" name="Valor USD" radius={[0,4,4,0]}>
+                      {topData.map((e,i)=>(
+                        <Cell key={i} fill={e.type==="crypto"?"#f59e0b":"#38bdf8"}/>
+                      ))}
+                    </Bar>
+                  </BarChart>
+                );
+              })()}
             </ResponsiveContainer>
           </div>
         </div>
