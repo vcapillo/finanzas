@@ -138,6 +138,32 @@ export const api = {
   revisarTodosDuplicados: (action) =>
     request("POST", "/v3/ingesta/duplicados/revisar-todos", { action }),
 
+  // ─── Transferencias internas v3 ───────────────────────────────
+  // BUGFIX v3.1: trailing slash requerido en todos los endpoints del router
+  // Sin slash: FastAPI 307 Redirect → browser pierde el prefijo /api → Nginx 404 silencioso
+  getTransferencias: (desde, hasta) => {
+    const params = new URLSearchParams();
+    if (desde) params.append("desde", desde);
+    if (hasta) params.append("hasta", hasta);
+    const qs = params.toString();
+    return request("GET", `/v3/transferencias/${qs ? "?" + qs : ""}`);
+  },
+
+  // BUGFIX v3.1: trailing slash requerido — FastAPI define POST "/" en el router
+  // Sin slash: FastAPI emite 307 Redirect y fetch() pierde el body → "Failed to fetch"
+  crearTransferencia: (payload) =>
+    request("POST", "/v3/transferencias/", payload),
+
+  eliminarTransferencia: (id) =>
+    request("DELETE", `/v3/transferencias/${id}`),
+
+  // GET /v3/patrimonio/assets — lista de activos (cuentas) con su asset_id
+  // BUGFIX v3.1: el backend retorna `assets` (no `activos`) con campo `asset_id` (no `id`)
+  getAssets: () =>
+    request("GET", "/v3/patrimonio/consolidado").then(data =>
+      (data.assets || []).map(a => ({ ...a, id: a.asset_id }))
+    ),
+
   // ═══════════════════════════════════════════════════════════════
   // Métodos genéricos — compatibilidad con componentes v3
   // Permiten llamadas estilo: api.get("/v3/...") y api.post("/v3/...", body)

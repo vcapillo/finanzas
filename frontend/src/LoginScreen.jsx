@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from "react";
 
 // ── Credenciales (cambiar aquí cuando se implemente auth real) ──
 const CREDENTIALS = [
-  { username: "victor",   password: "finanzas2026" },
+  { username: "vcapillo",   password: "1Ej*32$h6am2fX" },
   { username: "jennifer", password: "finanzasjvh"  },
 ];
 

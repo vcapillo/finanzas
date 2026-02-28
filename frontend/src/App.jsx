@@ -17,6 +17,7 @@ import { api } from "./api.js";
 // ── v3.0: Nuevos módulos de Patrimonio e Ingesta IA ──────────
 import PatrimonioConsolidado from "./components/patrimonio/PatrimonioConsolidado";
 import IngestaExtracto       from "./components/ingesta/IngestaExtracto";
+import TransferenciasPanel   from "./components/transferencias/TransferenciasPanel";
 
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTES FIJAS
@@ -101,6 +102,13 @@ const SYSTEM_RULES = [
   {label:"Restaurantes / Chifa",pattern:"RESTAURAN|KFC|MC.?DONALD|BEMBOS|PIZZA|BUFFET|DON BUFFET|CHIFA|PARRI", type:"gasto_variable", category:"Restaurante"},
   {label:"Ropa / Tiendas",      pattern:"SAGA|FALABELLA|RIPLEY|ZARA|OECHSLE",               type:"gasto_variable", category:"Ropa"                },
   {label:"Compras online",      pattern:"AMAZON|MERCADO.?LIBRE|LINIO",                      type:"gasto_variable", category:"Compras online"      },
+  // ── Transferencias internas entre cuentas propias (isInternal: true) ──────
+  {label:"Transfer BBVA→BCP",   pattern:"Transferencia a BCP Digital|TRANSF.*BCP",           type:"gasto_variable", category:"Movimiento interno", isInternal:true  },
+  {label:"Transfer BCP→BBVA",   pattern:"TRANSF\\.BCO\\.BBVA|BANCO DE CREDITO D|TRAN\\.CTAS\\.TERC\\.BM", type:"gasto_variable", category:"Movimiento interno", isInternal:true  },
+  {label:"Transfer BBVA→YAPE",  pattern:"YAPE.*SALIDA|TRANSF.*YAPE",                         type:"gasto_variable", category:"Movimiento interno", isInternal:true  },
+  {label:"Transfer entre ctas", pattern:"TRANSF.*CTA|CTA.*TRANSF|TRANSFER.*PROPIA",           type:"gasto_variable", category:"Movimiento interno", isInternal:true  },
+  {label:"TRANSF INMEDIATA BCP", pattern:"TRANSF INMEDIATA AL 002|TRANSF.*INMEDIATA.*002",   type:"gasto_variable", category:"Movimiento interno", isInternal:true  },
+  // ── Comercios generales ─────────────────────────────────────────────────────
   {label:"Promart / Sodimac",   pattern:"PROMART|SODIMAC",                                  type:"gasto_variable", category:"Otro variable"       },
 ];
 
@@ -115,18 +123,18 @@ function autoClassify(description, amount, customRules=[]) {
   for (const rule of customRules) {
     const re = compilePattern(rule.pattern);
     if (re && re.test(description)) {
-      return { type: amount>0 ? "ingreso" : rule.type, category: rule.category, confidence:"auto" };
+      return { type: amount>0 ? "ingreso" : rule.type, category: rule.category, confidence:"auto", ruleName: rule.label || "", isInternal: rule.isInternal || false };
     }
   }
   for (const rule of SYSTEM_RULES) {
     const re = compilePattern(rule.pattern);
     if (re && re.test(description)) {
-      return { type: amount>0 ? "ingreso" : rule.type, category: rule.category, confidence:"auto" };
+      return { type: amount>0 ? "ingreso" : rule.type, category: rule.category, confidence:"auto", ruleName: rule.label || "", isInternal: rule.isInternal || false };
     }
   }
-  if (amount > 0)             return { type:"ingreso",        category:"Otro ingreso",  confidence:"manual" };
-  if (Math.abs(amount)>=500)  return { type:"gasto_fijo",     category:"Otro fijo",     confidence:"manual" };
-  return                             { type:"gasto_variable",  category:"Otro variable", confidence:"manual" };
+  if (amount > 0)             return { type:"ingreso",        category:"Otro ingreso",  confidence:"manual", ruleName:"", isInternal:false };
+  if (Math.abs(amount)>=500)  return { type:"gasto_fijo",     category:"Otro fijo",     confidence:"manual", ruleName:"", isInternal:false };
+  return                             { type:"gasto_variable",  category:"Otro variable", confidence:"manual", ruleName:"", isInternal:false };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -172,7 +180,7 @@ function SettingsPanel({ settings, profile: initialProfile, onSave, onSaveProfil
 
   // ── Estados para formularios nuevos ────────────────────────
   const [newAcc,  setNewAcc]  = useState({name:"",type:"banco",color:"#888888",active:true});
-  const [newRule, setNewRule] = useState({label:"",pattern:"",type:"gasto_variable",category:"Alimentación"});
+  const [newRule, setNewRule] = useState({label:"",pattern:"",type:"gasto_variable",category:"Alimentación",isInternal:false});
   const [newCycle,setNewCycle]= useState({name:"",cutDay:"",dueDay:"",account:""});
   const [newCat,  setNewCat]  = useState({type:"gasto_variable",name:""});
   const [newSvc,  setNewSvc]  = useState({name:"",amount:"",day:"",account:"",category:"Suscripciones"});
@@ -477,6 +485,14 @@ function SettingsPanel({ settings, profile: initialProfile, onSave, onSaveProfil
                         </select>
                         <button onClick={()=>setEditRule(null)} style={{...s.btn,background:"#22c55e",color:"#fff",padding:"6px 10px"}}>✓</button>
                       </div>
+                      {/* Toggle transferencia interna */}
+                      <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",width:"fit-content"}}>
+                        <input type="checkbox" checked={!!rule.isInternal}
+                          onChange={e=>updateRules(r=>r.map((x,j)=>j===i?{...x,isInternal:e.target.checked}:x))}
+                          style={{accentColor:"#38bdf8",width:14,height:14}}/>
+                        <span style={{color:"#38bdf8",fontSize:11,fontWeight:600}}>🔁 Transferencia interna</span>
+                        <span style={{color:"#444",fontSize:10}}>(excluye del análisis y genera movimiento espejo en Ingesta IA)</span>
+                      </label>
                       {/* Test de patrón */}
                       <div style={{background:"#0a0a0c",borderRadius:6,padding:"8px 12px"}}>
                         <p style={{color:"#444",fontSize:10,margin:"0 0 4px",fontWeight:700}}>PRUEBA TU PATRÓN</p>
@@ -488,6 +504,7 @@ function SettingsPanel({ settings, profile: initialProfile, onSave, onSaveProfil
                       <span style={{color:"#f0f0f2",fontWeight:600,fontSize:13,minWidth:100}}>{rule.label||"Sin etiqueta"}</span>
                       <code style={{color:"#38bdf8",fontSize:11,background:"#0a0a0c",padding:"2px 6px",borderRadius:4,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rule.pattern}</code>
                       <span style={{fontSize:10,color:TYPE_CONFIG[rule.type]?.color,background:TYPE_CONFIG[rule.type]?.bg,padding:"2px 7px",borderRadius:4,border:`1px solid ${TYPE_CONFIG[rule.type]?.border}`,whiteSpace:"nowrap"}}>{rule.category}</span>
+                      {rule.isInternal&&<span style={{background:"rgba(56,189,248,0.12)",color:"#38bdf8",fontSize:9,padding:"2px 6px",borderRadius:3,border:"1px solid rgba(56,189,248,0.25)",fontWeight:700,whiteSpace:"nowrap"}}>🔁 interna</span>}
                       <button onClick={()=>setEditRule(i)} style={{background:"none",border:"none",color:"#444",cursor:"pointer",padding:3}}><Settings size={13}/></button>
                       <button onClick={()=>updateRules(r=>r.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#333",cursor:"pointer",padding:3}}><Trash2 size={13}/></button>
                     </div>
@@ -768,11 +785,14 @@ const fmt  = n => `S/ ${Math.abs(n).toLocaleString("es-PE",{minimumFractionDigit
 const fmtN = n => `S/ ${n.toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
 function calcMetrics(txs, fallbackIncome=0) {
-  const ingresos=txs.filter(t=>t.type==="ingreso").reduce((s,t)=>s+t.amount,0)||fallbackIncome;
-  const gastosFijos=txs.filter(t=>t.type==="gasto_fijo").reduce((s,t)=>s+Math.abs(t.amount),0);
-  const gastosVariables=txs.filter(t=>t.type==="gasto_variable").reduce((s,t)=>s+Math.abs(t.amount),0);
-  const deudas=txs.filter(t=>t.type==="deuda").reduce((s,t)=>s+Math.abs(t.amount),0);
-  const ahorros=txs.filter(t=>t.type==="ahorro").reduce((s,t)=>s+Math.abs(t.amount),0);
+  // BUGFIX v3.1: excluir movimientos internos (transferencias entre cuentas propias)
+  // excluir_del_analisis=true → no deben afectar ingresos, gastos ni saldo neto
+  const active=txs.filter(t=>!t.excluir_del_analisis);
+  const ingresos=active.filter(t=>t.type==="ingreso").reduce((s,t)=>s+t.amount,0)||fallbackIncome;
+  const gastosFijos=active.filter(t=>t.type==="gasto_fijo").reduce((s,t)=>s+Math.abs(t.amount),0);
+  const gastosVariables=active.filter(t=>t.type==="gasto_variable").reduce((s,t)=>s+Math.abs(t.amount),0);
+  const deudas=active.filter(t=>t.type==="deuda").reduce((s,t)=>s+Math.abs(t.amount),0);
+  const ahorros=active.filter(t=>t.type==="ahorro").reduce((s,t)=>s+Math.abs(t.amount),0);
   const totalGastos=gastosFijos+gastosVariables+deudas+ahorros;
   const saldoNeto=ingresos-totalGastos;
   return {ingresos,gastosFijos,gastosVariables,deudas,ahorros,totalGastos,saldoNeto,
@@ -1157,6 +1177,7 @@ export default function App({ onLogout }) {
   const [toast,setToast]       = useState("");
   const [filterType,setFilterType] = useState("all");
   const [searchQ,setSearchQ]   = useState("");
+  const [movTab,setMovTab]     = useState("lista");   // 'lista' | 'transferencias'
   const [showForm,setShowForm] = useState(false);
   const [showSettingsPanel,setShowSettingsPanel] = useState(false);
   const [trendData,setTrendData]       = useState([]);
@@ -1253,6 +1274,12 @@ export default function App({ onLogout }) {
   };
 
   const deleteTx=async(id)=>{
+    // FIX: proteger transacciones espejo de transferencias internas
+    const tx=transactions.find(t=>t.id===id);
+    if (tx?.source==="internal_transfer") {
+      showToast("⚠️ Este movimiento pertenece a una transferencia interna. Elimínala desde 'Transferencias internas'.");
+      return;
+    }
     try {
       await api.deleteTransaction(id);
       setTransactions(p=>p.filter(t=>t.id!==id));
@@ -1355,8 +1382,10 @@ export default function App({ onLogout }) {
   const health=getHealth(metrics);
   const hc=HEALTH[health];
 
+  // BUGFIX v3.1: excluir movimientos internos del mapa de categorías
+  // (gráfico torta, Top Categorías y alertas de presupuesto)
   const catMap={};
-  transactions.filter(t=>t.type!=="ingreso").forEach(t=>{
+  transactions.filter(t=>t.type!=="ingreso"&&!t.excluir_del_analisis).forEach(t=>{
     if (!catMap[t.category]) catMap[t.category]={amount:0,type:t.type};
     catMap[t.category].amount+=Math.abs(t.amount);
   });
@@ -1656,6 +1685,33 @@ export default function App({ onLogout }) {
         {/* ── MOVIMIENTOS ───────────────────────────────────── */}
         {tab==="movimientos"&&(
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {/* ── Sub-tabs: Lista / Transferencias ── */}
+            <div style={{display:"flex",gap:4,borderBottom:"1px solid #1a1a20",paddingBottom:0,marginBottom:2}}>
+              {[
+                {id:"lista",        label:"📋 Lista de movimientos"},
+                {id:"transferencias",label:"🔁 Transferencias internas"},
+              ].map(st=>(
+                <button key={st.id} onClick={()=>setMovTab(st.id)}
+                  style={{background:"transparent",border:"none",cursor:"pointer",padding:"8px 14px",
+                    fontSize:12,fontWeight:movTab===st.id?700:400,
+                    color:movTab===st.id?"#22c55e":"#555",
+                    borderBottom:movTab===st.id?"2px solid #22c55e":"2px solid transparent"}}>
+                  {st.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Sub-tab: Transferencias internas ── */}
+            {movTab==="transferencias"&&<TransferenciasPanel
+              currentPeriod={period}
+              onTransferCreated={async()=>{
+                const fresh=await api.getTransactions(period);
+                setTransactions(fresh);
+              }}
+            />}
+
+            {/* ── Sub-tab: Lista de movimientos ── */}
+            {movTab==="lista"&&<>
             {showForm&&(
               <div style={{...s.card,border:"1px solid rgba(34,197,94,0.3)"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
@@ -1716,21 +1772,49 @@ export default function App({ onLogout }) {
               ))}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:5}}>
+              {/* FIX: cabecera de columnas */}
+              {filteredTxs.length>0&&(
+                <div style={{display:"grid",gridTemplateColumns:"58px 82px 1fr 110px 80px 85px 50px 36px",gap:6,padding:"4px 14px",alignItems:"center"}}>
+                  {["Período","Fecha","Descripción / Comercio","Categoría","Tipo","Monto","",""].map((h,i)=>(
+                    <span key={i} style={{color:"#2a2a30",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</span>
+                  ))}
+                </div>
+              )}
               {filteredTxs.length===0&&<div style={{...s.card,textAlign:"center",color:"#444",padding:32}}>No hay movimientos para este período.</div>}
               {filteredTxs.map(tx=>(
-                <div key={tx.id} style={{background:"#0f0f12",border:"1px solid #1a1a20",borderLeft:`3px solid ${TYPE_CONFIG[tx.type].color}`,borderRadius:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
-                  <span style={{color:"#444",fontSize:11,minWidth:82}}>{tx.date}</span>
-                  <span style={{color:"#d0d0d8",fontSize:13,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tx.description}</span>
+                <div key={tx.id} style={{background:"#0f0f12",border:`1px solid ${tx.excluir_del_analisis?"rgba(56,189,248,0.12)":"#1a1a20"}`,borderLeft:`3px solid ${tx.excluir_del_analisis?"#38bdf8":TYPE_CONFIG[tx.type]?.color||"#555"}`,borderRadius:8,padding:"10px 14px",display:"grid",gridTemplateColumns:"58px 82px 1fr 110px 80px 85px 50px 36px",gap:6,alignItems:"center"}}>
+                  {/* Período */}
+                  <span style={{color:"#333",fontSize:10}}>{tx.period||tx.date?.substring(0,7)||""}</span>
+                  {/* Fecha */}
+                  <span style={{color:"#444",fontSize:11}}>{tx.date}</span>
+                  {/* Descripción */}
+                  <span style={{color:tx.excluir_del_analisis?"#555":"#d0d0d8",fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tx.description}</span>
+                  {/* Categoría */}
+                  <span style={{color:"#555",fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tx.category||"—"}</span>
+                  {/* Tipo */}
                   <Chip type={tx.type}/>
-                  <span style={{color:"#555",fontSize:11,minWidth:60,textAlign:"center"}}>{tx.account}</span>
-                  <span style={{color:tx.amount>0?"#22c55e":"#f87171",fontWeight:700,fontSize:13,minWidth:85,textAlign:"right"}}>
+                  {/* Monto */}
+                  <span style={{color:tx.amount>0?"#22c55e":"#f87171",fontWeight:700,fontSize:13,textAlign:"right"}}>
                     {tx.amount>0?"+":"-"}{fmt(tx.amount)}
                   </span>
-                  {tx.source&&tx.source!=="manual"&&<span style={{background:"rgba(56,189,248,0.08)",color:"#38bdf8",fontSize:9,padding:"1px 5px",borderRadius:3}}>{tx.source==="import_csv"?"CSV":"PDF"}</span>}
-                  <button onClick={()=>deleteTx(tx.id)} style={{background:"none",border:"none",color:"#2a2a30",cursor:"pointer",padding:3}}><Trash2 size={13}/></button>
+                  {/* FIX: badge diferenciado por origen */}
+                  {tx.excluir_del_analisis
+                    ? <span style={{background:"rgba(56,189,248,0.08)",color:"#38bdf8",fontSize:9,padding:"2px 6px",borderRadius:3,textAlign:"center",whiteSpace:"nowrap"}}>INTERNO 🔒</span>
+                    : tx.source&&tx.source!=="manual"
+                      ? <span style={{background:"rgba(56,189,248,0.06)",color:"#555",fontSize:9,padding:"2px 5px",borderRadius:3}}>{tx.source==="import_csv"?"CSV":"PDF"}</span>
+                      : <span/>
+                  }
+                  {/* Eliminar — bloqueado para internos */}
+                  <button
+                    onClick={()=>deleteTx(tx.id)}
+                    title={tx.excluir_del_analisis?"No se puede eliminar: pertenece a una transferencia interna":"Eliminar movimiento"}
+                    style={{background:"none",border:"none",color:tx.excluir_del_analisis?"#1a1a20":"#2a2a30",cursor:tx.excluir_del_analisis?"not-allowed":"pointer",padding:3}}>
+                    <Trash2 size={13}/>
+                  </button>
                 </div>
               ))}
             </div>
+            </>}
           </div>
         )}
 

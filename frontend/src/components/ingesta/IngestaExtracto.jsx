@@ -1,10 +1,11 @@
 /**
  * FinanzasVH v3.0 — IngestaExtracto.jsx  (Actualizado v3.1)
  * Previsualización completa + guardado + edición de categorías + creación de reglas con IA
+ * v3.1: Detección automática de transferencias internas + espejo InternalTransfer
  * Mismo estilo y flujo que el Importer (App.jsx)
  */
-import { useEffect, useState } from "react";
-import { Zap, CheckCircle2, AlertTriangle, Settings, Plus, X } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { Zap, CheckCircle2, AlertTriangle, Settings, Plus, X, ArrowRight } from "lucide-react";
 import { api } from "../../api.js";
 import BandejaDuplicados from "./BandejaDuplicados.jsx";
 
@@ -25,7 +26,6 @@ const TYPE_CONFIG = {
   ahorro:         { label:"🏦 Ahorro",         color:"#38bdf8", bg:"rgba(56,189,248,0.1)",  border:"rgba(56,189,248,0.25)"  },
 };
 
-// Mapeo de tipos Gemini → tipos internos de la app
 const GEMINI_TYPE_MAP = {
   "INGRESO":               "ingreso",
   "GASTO":                 "gasto_variable",
@@ -63,27 +63,56 @@ function mapGeminiTx(tx, sourceAccount, categories, classify) {
   let   appType    = GEMINI_TYPE_MAP[geminiType] || "gasto_variable";
   let   amount     = Number(tx.amount || 0);
 
-  // Normalizar signo
   if (appType !== "ingreso" && amount > 0) amount = -amount;
   if (appType === "ingreso"  && amount < 0) amount = Math.abs(amount);
 
-  const description = tx.merchant_clean || tx.description || "";
-  const date        = tx.date || "";
-  const period      = date.substring(0, 7);
+  const rawBankText   = tx.description || "";
+  const merchantClean = tx.merchant_clean || rawBankText;
+  const date          = tx.date || "";
+  const period        = date.substring(0, 7);
 
-  // Intentar reclasificar con las reglas del usuario / sistema
   let finalType     = appType;
   let finalCategory = tx.category_suggestion || (categories[appType] || DEFAULT_CATEGORIES[appType] || [])[0] || "Otro";
   let confidence    = "ia";
+  let ruleName      = "";
+  let isInternal    = false; // ← true si la regla matched es un movimiento interno
 
   if (classify) {
-    const classified = classify(description, amount);
-    finalType     = classified.type;
-    finalCategory = classified.category;
-    confidence    = classified.confidence;
+    const classifiedRaw = classify(rawBankText, amount);
+    if (classifiedRaw.confidence === "auto") {
+      finalType     = classifiedRaw.type;
+      finalCategory = classifiedRaw.category;
+      confidence    = "auto";
+      ruleName      = classifiedRaw.ruleName || "";
+      isInternal    = classifiedRaw.isInternal || false;
+    } else {
+      const classifiedClean = classify(merchantClean, amount);
+      finalType     = classifiedClean.type;
+      finalCategory = classifiedClean.category;
+      confidence    = classifiedClean.confidence;
+      ruleName      = classifiedClean.ruleName || "";
+      isInternal    = classifiedClean.isInternal || false;
+    }
   }
 
-  return { date, period, description, amount, type:finalType, category:finalCategory, account:sourceAccount, confidence, excluded:false, isDup:false };
+  const displayDescription = ruleName || merchantClean || rawBankText;
+
+  return {
+    date,
+    period,
+    description:    displayDescription,
+    rawDescription: rawBankText,
+    amount,
+    type:     finalType,
+    category: finalCategory,
+    account:  sourceAccount,
+    confidence,
+    ruleName,
+    isInternal,           // ← true = transferencia entre cuentas propias
+    destAssetId: null,    // ← se asigna en UI si isInternal=true
+    excluded: isInternal, // ← pre-excluir del flujo normal (se procesa aparte)
+    isDup:    false,
+  };
 }
 
 const PERIOD_LABELS = {
@@ -106,24 +135,28 @@ export default function IngestaExtracto({
 }) {
   const categories = Object.keys(propsCats).length > 0 ? propsCats : DEFAULT_CATEGORIES;
 
-  // ── Estado general ────────────────────────────────────────
   const [accounts,      setAccounts]      = useState(propsAccounts);
   const [loadingAccts,  setLoadingAccts]  = useState(false);
   const [sourceAccount, setSourceAccount] = useState(propsAccounts[0] || "");
   const [rawText,       setRawText]       = useState("");
   const [loading,       setLoading]       = useState(false);
-  const [aiResult,      setAiResult]      = useState(null);   // respuesta cruda de Gemini
+  const [aiResult,      setAiResult]      = useState(null);
   const [showBandeja,   setShowBandeja]   = useState(false);
 
-  // ── Estado del preview (igual que Importer) ───────────────
   const [preview,      setPreview]      = useState([]);
   const [editIdx,      setEditIdx]      = useState(null);
   const [importing,    setImporting]    = useState(false);
   const [importResult, setImportResult] = useState(null);
 
-  // ── Modal para crear regla con IA ─────────────────────────
-  const [ruleModal, setRuleModal] = useState(null); // índice en preview o null
+  const [ruleModal, setRuleModal] = useState(null);
   const [newRule,   setNewRule]   = useState({ label:"", pattern:"", type:"gasto_variable", category:"Alimentación" });
+
+  // ── Assets (cuentas) para transferencias internas ─────────
+  const [assets, setAssets] = useState([]);
+  const loadAssets = useCallback(async () => {
+    try { setAssets(await api.getAssets() || []); } catch { setAssets([]); }
+  }, []);
+  useEffect(() => { loadAssets(); }, [loadAssets]);
 
   // Cargar cuentas activas desde la API si no vienen por props
   useEffect(() => {
@@ -143,14 +176,14 @@ export default function IngestaExtracto({
       .finally(() => setLoadingAccts(false));
   }, [propsAccounts]);
 
-  // Cuando cambia la cuenta seleccionada, actualizar el account en el preview
   useEffect(() => {
     if (preview.length > 0 && sourceAccount) {
       setPreview(p => p.map(t => ({ ...t, account: sourceAccount })));
     }
   }, [sourceAccount]);
 
-  // ── Detección de duplicados ───────────────────────────────
+  const [editingDescIdx, setEditingDescIdx] = useState(null);
+
   const descSimilar = (a, b) => {
     const na = a.toLowerCase().replace(/[^a-z0-9]/g, "");
     const nb = b.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -168,9 +201,8 @@ export default function IngestaExtracto({
       Math.abs(new Date(ex.date) - new Date(tx.date)) / 86400000 <= 1 &&
       descSimilar(ex.description, tx.description)
     ),
-  })).map(tx => ({ ...tx, excluded: tx.isDup }));
+  })).map(tx => ({ ...tx, excluded: tx.excluded || tx.isDup }));
 
-  // ── Enviar a Gemini ───────────────────────────────────────
   const handleSubmit = async () => {
     if (!sourceAccount) { alert("Selecciona una cuenta antes de procesar."); return; }
     if (!rawText.trim()) { alert("Pega el texto del extracto antes de procesar."); return; }
@@ -189,13 +221,10 @@ export default function IngestaExtracto({
         raw_text: `CUENTA: ${sourceAccount}\n\n${rawText}`,
       });
       setAiResult(res);
-
-      // Construir preview desde clean_transactions de Gemini
       const txs = (res.clean_transactions || []).map(tx =>
         mapGeminiTx(tx, sourceAccount, categories, classify)
       );
       setPreview(markDups(txs));
-
       if (res.duplicates_pending > 0) setShowBandeja(true);
     } catch (err) {
       alert("Error al procesar con Gemini: " + err.message);
@@ -204,25 +233,68 @@ export default function IngestaExtracto({
     }
   };
 
-  // ── Acciones del preview ──────────────────────────────────
   const toggleExclude = idx =>
     setPreview(p => p.map((t, i) => i === idx ? { ...t, excluded: !t.excluded } : t));
 
   const updatePreview = (idx, field, val) =>
     setPreview(p => p.map((t, i) => i !== idx ? t : { ...t, [field]: val }));
 
-  // ── Guardar carga → importar al backend ───────────────────
+  // ── Guardar carga bifurcado: normales + transferencias internas ──
   const confirmImport = async () => {
     if (!onImport) { alert("Función de importación no disponible. Recarga la app."); return; }
-    const toSend = preview
-      .filter(t => !t.excluded)
-      .map(({ isDup, excluded, confidence, ...tx }) => tx);
-    if (!toSend.length) return;
+
+    // Validar transferencias internas sin cuenta destino
+    const sinDestino = preview.filter(t => t.isInternal && !t.excluded && !t.destAssetId);
+    if (sinDestino.length > 0) {
+      alert(`⚠️ ${sinDestino.length} transferencia(s) interna(s) sin cuenta destino asignada. Completa el campo antes de guardar.`);
+      return;
+    }
+
+    // Grupo 1: transferencias internas con cuenta destino asignada
+    const internals = preview.filter(t => t.isInternal && t.destAssetId);
+    // Grupo 2: movimientos normales (no internos, no excluidos)
+    const normales  = preview
+      .filter(t => !t.isInternal && !t.excluded)
+      .map(({ isDup, excluded, confidence, isInternal, destAssetId, ...tx }) => tx);
+
+    if (!internals.length && !normales.length) return;
 
     setImporting(true);
+    const msgs = [];
+
     try {
-      const result = await onImport(toSend);
-      setImportResult(result);
+      // Importar movimientos normales
+      if (normales.length > 0) {
+        const result = await onImport(normales);
+        msgs.push(`${result?.imported ?? normales.length} movimiento(s) importado(s)`);
+        setImportResult(result);
+      }
+
+      // Registrar transferencias internas como InternalTransfer (con espejo automático)
+      let txOk = 0; const txErr = [];
+      for (const tx of internals) {
+        const srcAsset = assets.find(a =>
+          a.name.toLowerCase() === sourceAccount.toLowerCase() ||
+          sourceAccount.toLowerCase().includes(a.name.toLowerCase()) ||
+          a.name.toLowerCase().includes(sourceAccount.toLowerCase())
+        );
+        if (!srcAsset) { txErr.push(`Sin activo para "${sourceAccount}"`); continue; }
+        try {
+          await api.crearTransferencia({
+            source_asset_id: srcAsset.id,
+            dest_asset_id:   parseInt(tx.destAssetId),
+            amount:          Math.abs(tx.amount),
+            currency:        "PEN",
+            transfer_date:   tx.date,
+            notes:           `[Ingesta IA] ${tx.rawDescription || tx.description}`,
+          });
+          txOk++;
+        } catch (e) { txErr.push(`${tx.description}: ${e?.detail || e?.message || "error"}`); }
+      }
+      if (txOk)         msgs.push(`${txOk} transferencia(s) interna(s) con espejo ✅`);
+      if (txErr.length) msgs.push(`⚠️ Errores: ${txErr.join(" | ")}`);
+
+      setImportResult({ message: msgs.join(" · ") || "Carga completada." });
       setPreview([]);
       setRawText("");
       setAiResult(null);
@@ -233,10 +305,8 @@ export default function IngestaExtracto({
     }
   };
 
-  // ── Crear regla con IA ────────────────────────────────────
   const openRuleModal = idx => {
     const tx = preview[idx];
-    // Generar patrón sugerido desde las primeras palabras significativas
     const words = tx.description.trim().split(/\s+/).slice(0, 3).join(".*");
     setNewRule({ label: tx.description, pattern: words, type: tx.type, category: tx.category });
     setRuleModal(idx);
@@ -246,8 +316,6 @@ export default function IngestaExtracto({
     if (!newRule.pattern.trim()) return;
     const rule = { ...newRule, label: newRule.label || newRule.pattern };
     if (onSaveRule) await onSaveRule(rule);
-
-    // Reaplicar la nueva regla a todos los items del preview que coincidan
     const re = compilePattern(rule.pattern);
     if (re) {
       setPreview(p => p.map(t =>
@@ -260,10 +328,18 @@ export default function IngestaExtracto({
   };
 
   // ── Métricas del preview ──────────────────────────────────
-  const toImport   = preview.filter(t => !t.excluded);
+  // internalsInPreview = todos los detectados como internos (para leyenda total)
+  // internalsSelected   = internos que el usuario activó (excluded=false)
+  // internalsReady      = internos activados Y con cuenta destino elegida
+  // toImport            = solo normales activos (sin internos)
+  const internalsInPreview = preview.filter(t => t.isInternal);
+  const internalsSelected  = internalsInPreview.filter(t => !t.excluded);
+  const internalsReady     = internalsSelected.filter(t => t.destAssetId);
+  const toImport   = preview.filter(t => !t.excluded && !t.isInternal);
   const dups       = preview.filter(t => t.isDup);
   const periodDist = {};
   toImport.forEach(t => { periodDist[t.period] = (periodDist[t.period] || 0) + 1; });
+  const totalToSave = toImport.length + internalsReady.length;
 
   const charColor  = rawText.length > 8000 ? "#f87171" : rawText.length > 4000 ? "#f59e0b" : "#444";
   const canSubmit  = !loading && !!sourceAccount && rawText.trim().length > 0;
@@ -291,10 +367,9 @@ export default function IngestaExtracto({
         </div>
       </div>
 
-      {/* ── FORMULARIO DE INGESTA ────────────────────────────── */}
+      {/* ── FORMULARIO ───────────────────────────────────────── */}
       <div style={s.card}>
 
-        {/* Selector de cuenta — mismo estilo que Importer */}
         <div style={{ background:"rgba(34,197,94,0.06)", border:"1px solid rgba(34,197,94,0.25)", borderRadius:10, padding:"12px 14px", marginBottom:14 }}>
           <label style={{ ...s.label, color:"#22c55e", marginBottom:6 }}>
             💳 CUENTA / TARJETA DE ORIGEN <span style={{ color:"#ef4444" }}>*</span>
@@ -309,7 +384,7 @@ export default function IngestaExtracto({
             <div style={{ background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.25)", borderRadius:8, padding:"10px 14px" }}>
               <div style={{ color:"#f59e0b", fontSize:12, fontWeight:700, marginBottom:4 }}>⚠️ Sin cuentas configuradas</div>
               <div style={{ color:"#666", fontSize:11 }}>
-                Ve a <strong style={{ color:"#f59e0b" }}>⚙️ Configuración → Cuentas</strong> y agrega tus cuentas activas (BBVA, BCP, YAPE, etc.)
+                Ve a <strong style={{ color:"#f59e0b" }}>⚙️ Configuración → Cuentas</strong> y agrega tus cuentas activas.
               </div>
             </div>
           )}
@@ -339,7 +414,6 @@ export default function IngestaExtracto({
           )}
         </div>
 
-        {/* Textarea */}
         <div style={{ marginBottom:14 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
             <label style={{ ...s.label, marginBottom:0 }}>📋 PEGA EL TEXTO DE TU EXTRACTO</label>
@@ -361,14 +435,14 @@ export default function IngestaExtracto({
               display:"flex", alignItems:"center", gap:8, padding:"10px 22px",
             }}>
             {loading
-              ? <><span style={{ display:"inline-block", animation:"spin 1s linear infinite" }}>⟳</span> Procesando con Gemini…</>
+              ? <><span style={{ display:"inline-block" }}>⟳</span> Procesando con Gemini…</>
               : <><Zap size={14}/> Procesar extracto</>
             }
           </button>
         </div>
       </div>
 
-      {/* ── RESULTADO IMPORTACIÓN EXITOSA ────────────────────── */}
+      {/* ── RESULTADO ────────────────────────────────────────── */}
       {importResult && (
         <div style={{ ...s.card, background:"rgba(34,197,94,0.06)", border:"1px solid rgba(34,197,94,0.25)" }}>
           <CheckCircle2 size={16} color="#22c55e" style={{ display:"inline", marginRight:8 }}/>
@@ -376,11 +450,10 @@ export default function IngestaExtracto({
         </div>
       )}
 
-      {/* ── PREVIEW (mismo diseño que Importer) ─────────────── */}
+      {/* ── PREVIEW ──────────────────────────────────────────── */}
       {preview.length > 0 && (
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
 
-          {/* Resumen de Gemini */}
           {aiResult?.ai_summary && (
             <div style={{ ...s.card, background:"rgba(56,189,248,0.04)", border:"1px solid rgba(56,189,248,0.15)" }}>
               <p style={{ color:"#38bdf8", fontSize:11, fontWeight:600, margin:"0 0 10px", letterSpacing:"0.5px" }}>🤖 GEMINI PROCESÓ</p>
@@ -400,13 +473,12 @@ export default function IngestaExtracto({
             </div>
           )}
 
-          {/* Stats — idénticas al Importer */}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
             {[
               { l:"Detectadas", v: preview.length,                       c:"#f0f0f2", e:"📊" },
-              { l:"Nuevas",     v: preview.filter(t=>!t.isDup).length,   c:"#22c55e", e:"✅" },
+              { l:"Nuevas",     v: preview.filter(t=>!t.isDup&&!t.isInternal).length,   c:"#22c55e", e:"✅" },
               { l:"Duplicadas", v: dups.length,                          c:"#f59e0b", e:"⚠️" },
-              { l:"A importar", v: toImport.length,                      c:"#38bdf8", e:"⬆️" },
+              { l:"Internas",   v: internalsSelected.length,             c:"#38bdf8", e:"🔁" },
             ].map(({ l, v, c, e }) => (
               <div key={l} style={{ ...s.card, padding:"12px 14px", textAlign:"center" }}>
                 <div style={{ fontSize:18, marginBottom:4 }}>{e}</div>
@@ -416,10 +488,9 @@ export default function IngestaExtracto({
             ))}
           </div>
 
-          {/* Distribución por período */}
           {Object.keys(periodDist).length > 0 && (
             <div style={{ ...s.card, background:"rgba(34,197,94,0.05)", border:"1px solid rgba(34,197,94,0.15)" }}>
-              <p style={{ color:"#22c55e", fontSize:12, fontWeight:700, margin:"0 0 10px" }}>📅 DISTRIBUCIÓN POR MES CALENDARIO</p>
+              <p style={{ color:"#22c55e", fontSize:12, fontWeight:700, margin:"0 0 10px" }}>📅 DISTRIBUCIÓN POR MES</p>
               <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                 {Object.entries(periodDist).sort().map(([p, cnt]) => (
                   <div key={p} style={{ background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.3)", borderRadius:8, padding:"8px 14px", textAlign:"center" }}>
@@ -428,33 +499,55 @@ export default function IngestaExtracto({
                   </div>
                 ))}
               </div>
-              {Object.keys(periodDist).length > 1 && (
-                <p style={{ color:"#555", fontSize:11, margin:"8px 0 0" }}>✦ Este extracto abarca {Object.keys(periodDist).length} meses.</p>
-              )}
             </div>
           )}
 
-          {/* Lista de transacciones — igual que Importer */}
           <div style={s.card}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-              <span style={{ color:"#888", fontSize:13 }}>{toImport.length} de {preview.length} se importarán</span>
-              <button onClick={confirmImport} disabled={toImport.length === 0 || importing}
+              <span style={{ color:"#888", fontSize:13 }}>
+                {toImport.length} normales
+                {internalsSelected.length > 0 && ` · ${internalsSelected.length} internas`}
+                {internalsInPreview.length > 0 && internalsSelected.length === 0 && (
+                  <span style={{ color:"#38bdf8", marginLeft:6, fontSize:11 }}>
+                    ({internalsInPreview.length} interna{internalsInPreview.length > 1 ? "s" : ""} detectada{internalsInPreview.length > 1 ? "s" : ""} — selecciónalas para incluir)
+                  </span>
+                )}
+              </span>
+              <button onClick={confirmImport} disabled={totalToSave === 0 || importing}
                 style={{ ...s.btn,
-                  background: toImport.length > 0 ? "linear-gradient(135deg,#22c55e,#16a34a)" : "#1a1a20",
-                  color:      toImport.length > 0 ? "#fff" : "#444",
+                  background: totalToSave > 0 ? "linear-gradient(135deg,#22c55e,#16a34a)" : "#1a1a20",
+                  color:      totalToSave > 0 ? "#fff" : "#444",
                   display:"flex", alignItems:"center", gap:6,
                 }}>
-                {importing ? "Guardando…" : <><CheckCircle2 size={14}/> Guardar carga ({toImport.length})</>}
+                {importing ? "Guardando…" : <><CheckCircle2 size={14}/> Guardar carga ({totalToSave})</>}
               </button>
+            </div>
+
+            {/* ── ENCABEZADOS ── */}
+            <div style={{
+              display:"flex", alignItems:"center", gap:8,
+              padding:"6px 12px", background:"#0a0a0c", borderRadius:6,
+              border:"1px solid #1a1a20", marginBottom:4,
+              position:"sticky", top:0, zIndex:10,
+            }}>
+              <span style={{ minWidth:18 }}/>
+              <span style={{ color:"#333", fontSize:10, fontWeight:700, letterSpacing:"0.5px", minWidth:56, textAlign:"center" }}>PERÍODO</span>
+              <span style={{ color:"#333", fontSize:10, fontWeight:700, letterSpacing:"0.5px", minWidth:78 }}>FECHA</span>
+              <span style={{ color:"#333", fontSize:10, fontWeight:700, letterSpacing:"0.5px", flex:1 }}>DESCRIPCIÓN / COMERCIO</span>
+              <span style={{ color:"#333", fontSize:10, fontWeight:700, letterSpacing:"0.5px", minWidth:120 }}>CATEGORÍA</span>
+              <span style={{ color:"#333", fontSize:10, fontWeight:700, letterSpacing:"0.5px", minWidth:110 }}>TIPO</span>
+              <span style={{ color:"#333", fontSize:10, fontWeight:700, letterSpacing:"0.5px", minWidth:80, textAlign:"right" }}>MONTO</span>
+              <span style={{ color:"#333", fontSize:10, fontWeight:700, letterSpacing:"0.5px", minWidth:28 }}/>
             </div>
 
             <div style={{ display:"flex", flexDirection:"column", gap:5, maxHeight:440, overflowY:"auto" }}>
               {preview.map((tx, i) => (
                 <div key={i} style={{
                   background:"#0f0f12",
-                  border:`1px solid ${tx.isDup ? "rgba(245,158,11,0.2)" : "#1a1a20"}`,
+                  border:`1px solid ${tx.isInternal ? "rgba(56,189,248,0.2)" : tx.isDup ? "rgba(245,158,11,0.2)" : "#1a1a20"}`,
                   borderLeft:`3px solid ${
-                    tx.excluded    ? "#2a2a30" :
+                    tx.excluded && !tx.isInternal ? "#2a2a30" :
+                    tx.isInternal  ? "#38bdf8" :
                     tx.isDup       ? "#f59e0b" :
                     tx.confidence === "auto" ? "#22c55e" :
                     tx.confidence === "ia"   ? "#a855f7" :
@@ -464,9 +557,10 @@ export default function IngestaExtracto({
                   opacity: tx.excluded ? 0.4 : 1, transition:"opacity .2s",
                 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                    {/* Toggle incluir/excluir */}
+                    {/* Toggle incluir/excluir — habilitado para todos, internos inician deseleccionados */}
                     <button onClick={() => toggleExclude(i)}
-                      style={{ background:"none", border:"none", cursor:"pointer", fontSize:14, padding:0, color: tx.excluded ? "#444" : "#22c55e" }}>
+                      title={tx.isInternal && tx.excluded ? "Seleccionar: requiere elegir cuenta destino" : tx.isInternal ? "Deseleccionar transferencia interna" : ""}
+                      style={{ background:"none", border:"none", cursor:"pointer", fontSize:14, padding:0, color: tx.excluded ? "#444" : tx.isInternal ? "#38bdf8" : "#22c55e" }}>
                       {tx.excluded ? "○" : "●"}
                     </button>
 
@@ -478,9 +572,52 @@ export default function IngestaExtracto({
                     {/* Fecha */}
                     <span style={{ color:"#444", fontSize:11, minWidth:78 }}>{tx.date}</span>
 
-                    {/* Descripción */}
-                    <span style={{ color: tx.excluded ? "#444" : "#d0d0d8", fontSize:12, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                      {tx.description}
+                    {/* Descripción editable inline */}
+                    <div style={{ flex:1, minWidth:0, position:"relative" }}>
+                      {editingDescIdx === i ? (
+                        <input
+                          autoFocus
+                          value={tx.description}
+                          onChange={e => updatePreview(i, "description", e.target.value)}
+                          onBlur={() => setEditingDescIdx(null)}
+                          onKeyDown={e => e.key === "Enter" && setEditingDescIdx(null)}
+                          style={{
+                            ...s.input,
+                            padding:"2px 6px", fontSize:12, height:22,
+                            background:"rgba(56,189,248,0.08)",
+                            border:"1px solid rgba(56,189,248,0.35)",
+                            color:"#f0f0f2",
+                          }}
+                        />
+                      ) : (
+                        <span
+                          onClick={() => !tx.excluded && setEditingDescIdx(i)}
+                          title={tx.rawDescription ? `Original: ${tx.rawDescription}` : tx.description}
+                          style={{
+                            display:"block",
+                            color: tx.excluded ? "#444" : "#d0d0d8",
+                            fontSize:12,
+                            overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                            cursor: tx.excluded ? "default" : "text",
+                            borderBottom: tx.excluded ? "none" : "1px dashed #2a2a30",
+                          }}>
+                          {tx.description}
+                          {tx.ruleName && tx.ruleName !== tx.description && (
+                            <span style={{ color:"#22c55e", fontSize:9, marginLeft:5, opacity:0.7 }}>✓ regla</span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Categoría */}
+                    <span style={{
+                      color: tx.excluded ? "#333" : "#555", fontSize:11, minWidth:120,
+                      overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                      background: tx.excluded ? "transparent" : "rgba(255,255,255,0.03)",
+                      border: tx.excluded ? "none" : "1px solid #1e1e26",
+                      borderRadius:4, padding:"1px 6px",
+                    }} title={tx.category}>
+                      {tx.category || "—"}
                     </span>
 
                     {/* Chip tipo */}
@@ -491,16 +628,45 @@ export default function IngestaExtracto({
                       {tx.amount > 0 ? "+" : "-"}{fmt(tx.amount)}
                     </span>
 
-                    {/* Badge origen de clasificación */}
+                    {/* Badges */}
                     {tx.confidence === "ia" && (
                       <span style={{ background:"rgba(168,85,247,0.1)", color:"#a855f7", fontSize:9, padding:"1px 5px", borderRadius:3, border:"1px solid rgba(168,85,247,0.2)" }}>IA</span>
+                    )}
+                    {tx.isInternal && (
+                      <span style={{ background:"rgba(56,189,248,0.12)", color:"#38bdf8", fontSize:9,
+                        padding:"2px 6px", borderRadius:3, border:"1px solid rgba(56,189,248,0.25)",
+                        fontWeight:700, letterSpacing:"0.04em" }}>
+                        🔁 INTERNO
+                      </span>
                     )}
                     {tx.isDup && (
                       <span style={{ background:"rgba(245,158,11,0.1)", color:"#f59e0b", fontSize:9, padding:"1px 5px", borderRadius:3, border:"1px solid rgba(245,158,11,0.2)" }}>DUP</span>
                     )}
 
+                    {/* Selector cuenta destino (solo para transferencias internas) */}
+                    {tx.isInternal && !tx.excluded && (
+                      <div style={{ display:"flex", alignItems:"center", gap:5,
+                        background:"rgba(56,189,248,0.08)", border:"1px solid rgba(56,189,248,0.2)",
+                        borderRadius:6, padding:"3px 8px",
+                      }}>
+                        <ArrowRight size={11} color="#38bdf8"/>
+                        <select
+                          value={tx.destAssetId || ""}
+                          onChange={e => setPreview(p => p.map((t,idx) => idx===i ? {...t, destAssetId: e.target.value} : t))}
+                          style={{ background:"transparent", border:"none", color: tx.destAssetId ? "#38bdf8" : "#f87171",
+                            fontSize:11, fontWeight:600, cursor:"pointer", outline:"none", maxWidth:120 }}
+                        >
+                          <option value="">destino…</option>
+                          {assets
+                            .filter(a => a.name !== sourceAccount)
+                            .map(a => <option key={a.id} value={a.id}>{a.name}</option>)
+                          }
+                        </select>
+                      </div>
+                    )}
+
                     {/* Botón crear regla con IA */}
-                    {onSaveRule && !tx.excluded && (
+                    {onSaveRule && !tx.excluded && !tx.isInternal && (
                       <button onClick={() => openRuleModal(i)} title="Crear regla para este comercio"
                         style={{ ...s.btn, padding:"2px 7px", fontSize:10,
                           background:"rgba(168,85,247,0.1)", color:"#a855f7",
@@ -517,7 +683,7 @@ export default function IngestaExtracto({
                     </button>
                   </div>
 
-                  {/* Panel de edición inline — tipo / categoría / cuenta */}
+                  {/* Panel de edición inline */}
                   {editIdx === i && (
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginTop:10 }}>
                       <div>
@@ -550,26 +716,25 @@ export default function IngestaExtracto({
               ))}
             </div>
 
-            {/* Botón guardar al pie si la lista es larga */}
             {preview.length > 5 && (
               <div style={{ display:"flex", justifyContent:"flex-end", marginTop:12, paddingTop:12, borderTop:"1px solid #1a1a20" }}>
-                <button onClick={confirmImport} disabled={toImport.length === 0 || importing}
+                <button onClick={confirmImport} disabled={totalToSave === 0 || importing}
                   style={{ ...s.btn,
-                    background: toImport.length > 0 ? "linear-gradient(135deg,#22c55e,#16a34a)" : "#1a1a20",
-                    color:      toImport.length > 0 ? "#fff" : "#444",
+                    background: totalToSave > 0 ? "linear-gradient(135deg,#22c55e,#16a34a)" : "#1a1a20",
+                    color:      totalToSave > 0 ? "#fff" : "#444",
                     display:"flex", alignItems:"center", gap:6,
                   }}>
-                  {importing ? "Guardando…" : <><CheckCircle2 size={14}/> Guardar carga ({toImport.length})</>}
+                  {importing ? "Guardando…" : <><CheckCircle2 size={14}/> Guardar carga ({totalToSave})</>}
                 </button>
               </div>
             )}
           </div>
 
-          {/* Leyenda de colores de la barra lateral */}
           <div style={{ display:"flex", gap:12, flexWrap:"wrap", padding:"4px 2px" }}>
             {[
               { c:"#22c55e", l:"Clasificado por regla" },
               { c:"#a855f7", l:"Clasificado por IA" },
+              { c:"#38bdf8", l:"Transferencia interna" },
               { c:"#f59e0b", l:"Posible duplicado" },
               { c:"#2a2a30", l:"Excluido de la carga" },
             ].map(({ c, l }) => (
@@ -582,16 +747,15 @@ export default function IngestaExtracto({
         </div>
       )}
 
-      {/* ── MODAL CREAR REGLA CON IA ──────────────────────────── */}
+      {/* ── MODAL CREAR REGLA ─────────────────────────────────── */}
       {ruleModal !== null && preview[ruleModal] && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
           <div style={{ ...s.card, width:"100%", maxWidth:540, border:"1px solid rgba(168,85,247,0.35)" }}>
-
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
               <div>
                 <span style={{ color:"#a855f7", fontWeight:700, fontSize:14 }}>⚡ Nueva regla de clasificación</span>
                 <p style={{ color:"#555", fontSize:11, margin:"4px 0 0" }}>
-                  Comercio detectado por IA: <strong style={{ color:"#d0d0d8" }}>{preview[ruleModal]?.description}</strong>
+                  Comercio: <strong style={{ color:"#d0d0d8" }}>{preview[ruleModal]?.description}</strong>
                 </p>
               </div>
               <button onClick={() => setRuleModal(null)} style={{ background:"none", border:"none", color:"#444", cursor:"pointer" }}>
@@ -599,17 +763,9 @@ export default function IngestaExtracto({
               </button>
             </div>
 
-            <div style={{ background:"rgba(168,85,247,0.05)", border:"1px solid rgba(168,85,247,0.15)", borderRadius:8, padding:"10px 14px", marginBottom:14 }}>
-              <p style={{ color:"#a855f7", fontSize:11, fontWeight:700, margin:"0 0 4px" }}>💡 SUGERENCIA DE LA IA</p>
-              <p style={{ color:"#666", fontSize:11, margin:0 }}>
-                El patrón se generó automáticamente desde las primeras palabras del comercio.
-                Puedes ajustarlo antes de guardar. Usa <code style={{ color:"#38bdf8" }}>.*</code> como comodín entre palabras.
-              </p>
-            </div>
-
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
               <div>
-                <label style={s.label}>ETIQUETA (nombre amigable)</label>
+                <label style={s.label}>ETIQUETA</label>
                 <input style={s.input} value={newRule.label}
                   onChange={e => setNewRule(x => ({ ...x, label: e.target.value }))}
                   placeholder="Ej. Colegio Gracias Jesús"/>
@@ -618,7 +774,7 @@ export default function IngestaExtracto({
                 <label style={s.label}>PATRÓN (texto o regex)</label>
                 <input style={s.input} value={newRule.pattern}
                   onChange={e => setNewRule(x => ({ ...x, pattern: e.target.value }))}
-                  placeholder="Ej. COLEGIO.*GRACIAS|GRACIAS JESUS"/>
+                  placeholder="Ej. COLEGIO.*GRACIAS"/>
               </div>
             </div>
 
@@ -649,10 +805,6 @@ export default function IngestaExtracto({
                 Cancelar
               </button>
             </div>
-
-            <p style={{ color:"#333", fontSize:10, margin:"10px 0 0" }}>
-              La regla se guardará en ⚙️ Configuración → Reglas y se aplicará en futuros extractos.
-            </p>
           </div>
         </div>
       )}

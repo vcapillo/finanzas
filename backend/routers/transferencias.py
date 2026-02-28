@@ -229,17 +229,35 @@ def eliminar_transferencia(
 
     eliminadas = 0
     for tx_id in [transferencia.source_tx_id, transferencia.dest_tx_id]:
-        if tx_id:
-            tx = db.query(Transaction).filter(Transaction.id == tx_id).first()
-            if tx:
-                db.delete(tx)
-                eliminadas += 1
+        if not tx_id:
+            continue
+
+        # SAFETY: solo eliminar la tx si no es referenciada por OTRA transferencia
+        # Previene el bug donde source_tx_id duplicado destruye datos ajenos
+        otras_refs = (
+            db.query(InternalTransfer)
+            .filter(
+                InternalTransfer.id != transfer_id,
+                (
+                    (InternalTransfer.source_tx_id == tx_id) |
+                    (InternalTransfer.dest_tx_id   == tx_id)
+                )
+            )
+            .count()
+        )
+        if otras_refs > 0:
+            continue  # tx compartida con otra transferencia — no tocar
+
+        tx = db.query(Transaction).filter(Transaction.id == tx_id).first()
+        if tx:
+            db.delete(tx)
+            eliminadas += 1
 
     db.delete(transferencia)
     db.commit()
 
     return {
-        "deleted_transfer_id": transfer_id,
+        "deleted_transfer_id":  transfer_id,
         "deleted_transactions": eliminadas,
-        "message": "Transferencia y sus transacciones asociadas eliminadas.",
+        "message": "Transferencia eliminada. Transacciones espejo removidas si no eran compartidas.",
     }
