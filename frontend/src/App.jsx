@@ -2061,6 +2061,24 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
     return { ...c, ppp, curValue, pnl, pnlPct };
   });
 
+  // ── Pie por ticker (OBS-06) ────────────────────────────────
+  // Paleta: crypto en tonos ámbar/naranja, acciones en azul/verde
+  const TICKER_COLORS = [
+    "#f59e0b","#38bdf8","#22c55e","#a78bfa",
+    "#f87171","#34d399","#fb923c","#60a5fa",
+    "#e879f9","#94a3b8","#fbbf24","#2dd4bf",
+  ];
+  const pieDataByTicker = consolidatedByTicker
+    .filter(c=>(c.curValue??c.totalCost)>0)
+    .sort((a,b)=>(b.curValue??b.totalCost)-(a.curValue??a.totalCost))
+    .map((c,i)=>({
+      name:     c.ticker,
+      fullName: c.name,
+      value:    parseFloat((c.curValue??c.totalCost).toFixed(2)),
+      color:    TICKER_COLORS[i % TICKER_COLORS.length],
+      type:     c.type,
+    }));
+
   // ── Snapshot ───────────────────────────────────────────────
   const handleSnapshot = async () => {
     // Primero confirmar cualquier precio que esté siendo escrito en inputs
@@ -2249,6 +2267,81 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
         </div>
       )}
 
+      {/* Posiciones consolidadas por ticker — OBS-06 */}
+      {consolidatedByTicker.length>0&&(
+        <div style={s.card}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div>
+              <p style={{color:"#555",fontSize:11,fontWeight:600,margin:"0 0 2px",letterSpacing:"0.5px"}}>POSICIONES CONSOLIDADAS</p>
+              <p style={{color:"#333",fontSize:10,margin:0}}>PPP = Precio Promedio Ponderado de todas las compras por ticker</p>
+            </div>
+            <span style={{background:"rgba(56,189,248,0.1)",color:"#38bdf8",fontSize:10,padding:"2px 8px",borderRadius:4,border:"1px solid rgba(56,189,248,0.2)"}}>
+              {consolidatedByTicker.length} ticker{consolidatedByTicker.length!==1?"s":""}
+            </span>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead>
+                <tr style={{borderBottom:"1px solid #1a1a20"}}>
+                  {["Activo","Qty total","PPP (compra)","Precio actual","Costo total","Valor USD","Valor S/","P&L","Rend."].map(h=>(
+                    <th key={h} style={{color:"#444",fontWeight:600,padding:"6px 10px",textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...consolidatedByTicker].sort((a,b)=>(b.curValue??0)-(a.curValue??0)).map((c,idx)=>{
+                  const isPos = c.pnl==null||c.pnl>=0;
+                  return (
+                    <tr key={c.ticker} style={{borderBottom:"1px solid #111115"}}>
+                      <td style={{padding:"10px",color:"#e0e0e8",fontWeight:600,whiteSpace:"nowrap"}}>
+                        <span style={{background:c.type==="crypto"?"rgba(245,158,11,0.12)":"rgba(56,189,248,0.12)",
+                          color:c.type==="crypto"?"#f59e0b":"#38bdf8",
+                          borderRadius:4,padding:"2px 6px",fontSize:11,marginRight:6}}>
+                          {c.type==="crypto"?"🪙":"📈"}
+                        </span>
+                        {c.ticker}
+                        <span style={{color:"#555",fontWeight:400,marginLeft:6,fontSize:11}}>{c.name}</span>
+                      </td>
+                      <td style={{padding:"10px",color:"#888"}}>
+                        {c.totalQty.toLocaleString("en-US",{maximumFractionDigits:6})}
+                      </td>
+                      <td style={{padding:"10px",color:"#666"}}>
+                        ${c.ppp.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4})}
+                      </td>
+                      <td style={{padding:"10px",color:"#e0e0e8"}}>
+                        {c.curPrice!=null
+                          ?`$${c.curPrice.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4})}`
+                          :<span style={{color:"#444",fontSize:11}}>sin precio</span>}
+                      </td>
+                      <td style={{padding:"10px",color:"#666"}}>
+                        ${c.totalCost.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+                      </td>
+                      <td style={{padding:"10px",color:"#e0e0e8",fontWeight:600}}>
+                        {c.curValue!=null?`$${c.curValue.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}
+                      </td>
+                      <td style={{padding:"10px",color:"#a0a0b8"}}>
+                        {c.curValue!=null?`S/${(c.curValue*exRate).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}
+                      </td>
+                      <td style={{padding:"10px",color:isPos?"#22c55e":"#f87171",fontWeight:600}}>
+                        {c.pnl!=null?`${c.pnl>=0?"+":""}$${c.pnl.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}
+                      </td>
+                      <td style={{padding:"10px"}}>
+                        {c.pnlPct!=null&&(
+                          <span style={{background:isPos?"rgba(34,197,94,0.1)":"rgba(248,113,113,0.1)",
+                            color:isPos?"#22c55e":"#f87171",borderRadius:4,padding:"2px 6px",fontWeight:700}}>
+                            {`${c.pnlPct>=0?"+":""}${c.pnlPct.toFixed(2)}%`}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Tabla de activos */}
       {investments.length===0?(
         <div style={{...s.card,textAlign:"center",padding:40,color:"#333"}}>
@@ -2347,18 +2440,23 @@ function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSav
         </div>
       )}
 
-      {/* Distribución crypto vs acciones */}
-      {pieData.length>0&&(
+      {/* Distribución por ticker + Top Activos */}
+      {pieDataByTicker.length>0&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
           <div style={s.card}>
-            <p style={{color:"#555",fontSize:11,fontWeight:600,margin:"0 0 14px",letterSpacing:"0.5px"}}>DISTRIBUCIÓN</p>
+            <p style={{color:"#555",fontSize:11,fontWeight:600,margin:"0 0 4px",letterSpacing:"0.5px"}}>DISTRIBUCIÓN POR ACTIVO</p>
+            <p style={{color:"#333",fontSize:10,margin:"0 0 10px"}}>Valor consolidado por ticker</p>
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" innerRadius={52} outerRadius={78} dataKey="value" paddingAngle={4}>
-                  {pieData.map((e,i)=><Cell key={i} fill={e.color}/>)}
+                <Pie data={pieDataByTicker} cx="50%" cy="50%" innerRadius={52} outerRadius={78} dataKey="value" paddingAngle={3}>
+                  {pieDataByTicker.map((e,i)=><Cell key={i} fill={e.color}/>)}
                 </Pie>
                 <Tooltip content={<TTipUSD/>}/>
-                <Legend formatter={v=><span style={{color:"#888",fontSize:11}}>{v}</span>}/>
+                <Legend formatter={(v,entry)=>(
+                  <span style={{color:"#888",fontSize:10}}>
+                    {entry.payload.type==="crypto"?"🪙":"📈"} {v}
+                  </span>
+                )}/>
               </PieChart>
             </ResponsiveContainer>
           </div>
