@@ -11,13 +11,14 @@ import {
   LayoutDashboard, List, Upload, Target, Calendar, BookOpen,
   Settings, Plus, X, Trash2, RefreshCw, ChevronRight, ChevronLeft,
   AlertTriangle, CheckCircle2, Search, Zap, Bell, Download,
-  TrendingUp, TrendingDown, DollarSign, BarChart2, Edit2, Save
+  TrendingUp, TrendingDown, DollarSign, BarChart2, Edit2, Save, Info, HelpCircle
 } from "lucide-react";
 import { api } from "./api.js";
 // ── v3.0: Nuevos módulos de Patrimonio e Ingesta IA ──────────
 import PatrimonioConsolidado from "./components/patrimonio/PatrimonioConsolidado";
 import IngestaExtracto       from "./components/ingesta/IngestaExtracto";
 import TransferenciasPanel   from "./components/transferencias/TransferenciasPanel";
+import HelpPanel             from "./components/help/HelpPanel";
 
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTES FIJAS
@@ -1179,6 +1180,7 @@ export default function App({ onLogout }) {
   const [movTab,setMovTab]     = useState("lista");   // 'lista' | 'transferencias'
   const [showForm,setShowForm] = useState(false);
   const [showSettingsPanel,setShowSettingsPanel] = useState(false);
+  const [showHelpPanel,setShowHelpPanel] = useState(false);
   const [trendData,setTrendData]       = useState([]);
   const [investments,setInvestments]   = useState([]);
   const [snapshots,setSnapshots]       = useState([]);
@@ -1473,6 +1475,13 @@ export default function App({ onLogout }) {
               🔒
             </button>
           )}
+          <button onClick={()=>setShowHelpPanel(true)} title="Ayuda y documentación"
+            style={{...s.btn,background:"#1a1a20",color:"#888",
+              border:"1px solid #2a2a30",
+              padding:"6px 10px",display:"flex",alignItems:"center",gap:4,
+              fontWeight:700,fontSize:12}}>
+            <HelpCircle size={13}/>
+          </button>
           <button onClick={()=>setShowSettingsPanel(true)} title="Configuración"
             style={{...s.btn,background:customRules.length>0?"rgba(34,197,94,0.12)":"#1a1a20",
               color:customRules.length>0?"#22c55e":"#888",
@@ -1483,6 +1492,9 @@ export default function App({ onLogout }) {
           </button>
         </div>
       </div>
+
+      {/* HelpPanel — drawer lateral (OBS-03) */}
+      {showHelpPanel&&<HelpPanel onClose={()=>setShowHelpPanel(false)}/>}
 
       {/* SettingsPanel — drawer lateral */}
       {showSettingsPanel&&settings&&(
@@ -1721,10 +1733,24 @@ export default function App({ onLogout }) {
                   <div><label style={s.label}>FECHA</label><input type="date" style={s.input} value={newTx.date} onChange={e=>setNewTx(x=>({...x,date:e.target.value}))}/></div>
                   <div style={{gridColumn:"span 2"}}><label style={s.label}>DESCRIPCIÓN</label><input style={s.input} placeholder="Ej. Supermercado Wong" value={newTx.description} onChange={e=>setNewTx(x=>({...x,description:e.target.value}))}/></div>
                   <div><label style={s.label}>MONTO (S/)</label><input type="number" style={s.input} value={newTx.amount} onChange={e=>setNewTx(x=>({...x,amount:e.target.value}))}/></div>
-                  <div><label style={s.label}>TIPO</label>
+                  <div>
+                    <label style={{...s.label,display:"flex",alignItems:"center",gap:4}}>
+                      TIPO
+                      {newTx.type==="deuda" && (
+                        <span title="Pago de obligación contraída previamente (tarjeta de crédito, préstamo, cuotas). El bien ya fue consumido; ahora se devuelve el crédito. Se usa para calcular el ratio deuda/ingreso." style={{cursor:"help",color:"#a78bfa",display:"inline-flex",alignItems:"center"}}>
+                          <Info size={12}/>
+                        </span>
+                      )}
+                    </label>
                     <select style={s.select} value={newTx.type} onChange={e=>setNewTx(x=>({...x,type:e.target.value,category:(categories[e.target.value]||[])[0]||""}))}>
                       {Object.entries(TYPE_CONFIG).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
                     </select>
+                    {newTx.type==="deuda" && (
+                      <div style={{marginTop:5,padding:"6px 9px",borderRadius:6,background:"rgba(167,139,250,0.08)",border:"1px solid rgba(167,139,250,0.25)",fontSize:10.5,color:"#c4b5fd",lineHeight:1.5}}>
+                        💳 <strong>Deuda/Cuota:</strong> obligación de crédito ya contraída.<br/>
+                        <span style={{opacity:0.8}}>Ej: pago tarjeta BBVA, cuota préstamo, iO crédito.<br/>Distinto de Gasto Fijo (servicio vigente mensual).</span>
+                      </div>
+                    )}
                   </div>
                   <div><label style={s.label}>CATEGORÍA</label>
                     <select style={s.select} value={newTx.category} onChange={e=>setNewTx(x=>({...x,category:e.target.value}))}>
