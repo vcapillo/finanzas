@@ -8,3 +8,4 @@ httpx
 apscheduler==3.10.4
 yfinance==0.2.37
 requests==2.31.0
+reportlab==4.2.5

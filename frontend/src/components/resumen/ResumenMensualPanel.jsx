@@ -6,7 +6,7 @@
  * Permite regenerar el resumen manualmente desde el panel.
  */
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, Brain, AlertTriangle, CheckCircle, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { RefreshCw, Brain, AlertTriangle, CheckCircle, Clock, ChevronDown, ChevronUp, FileDown } from "lucide-react";
 import { api } from "../../api.js";
 import { fmt } from "../../utils/format.js";
 
@@ -57,6 +57,7 @@ export default function ResumenMensualPanel({ period }) {
   const [error,         setError]         = useState(null);
   const [expandedRecs,  setExpandedRecs]  = useState(true);
   const [expandedCats,  setExpandedCats]  = useState(false);
+  const [downloading,   setDownloading]   = useState(false);
 
   // Cargar resumen guardado al montar o cambiar período
   const cargarResumen = useCallback(async () => {
@@ -74,6 +75,26 @@ export default function ResumenMensualPanel({ period }) {
   }, [period]);
 
   useEffect(() => { cargarResumen(); }, [cargarResumen]);
+
+  // Descargar PDF del resumen
+  const descargarPDF = async () => {
+    setDownloading(true);
+    try {
+      const blob = await api.descargarResumenPDF(period);
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `FinanzasVH_Resumen_${period}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError("No se pudo descargar el PDF: " + e.message);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   // Generar resumen con Gemini
   const generarResumen = async () => {
@@ -116,26 +137,53 @@ export default function ResumenMensualPanel({ period }) {
             Resumen IA — {PERIOD_LABEL(period)}
           </span>
         </div>
-        <button
-          onClick={generarResumen}
-          disabled={generating}
-          style={{
-            display:      "flex",
-            alignItems:   "center",
-            gap:          6,
-            background:   generating ? "#1a1a20" : "rgba(167,139,250,0.12)",
-            border:       "1px solid rgba(167,139,250,0.3)",
-            borderRadius: 7,
-            color:        generating ? "#555" : "#a78bfa",
-            cursor:       generating ? "not-allowed" : "pointer",
-            fontSize:     12,
-            fontWeight:   600,
-            padding:      "6px 14px",
-          }}
-        >
-          <RefreshCw size={13} style={{ animation: generating ? "spin 1s linear infinite" : "none" }} />
-          {generating ? "Generando con Gemini..." : resumen ? "Regenerar" : "Generar Resumen IA"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {/* Botón PDF — solo visible si hay resumen */}
+          {resumen && (
+            <button
+              onClick={descargarPDF}
+              disabled={downloading}
+              title="Descargar resumen como PDF"
+              style={{
+                display:      "flex",
+                alignItems:   "center",
+                gap:          6,
+                background:   downloading ? "#1a1a20" : "rgba(56,189,248,0.10)",
+                border:       "1px solid rgba(56,189,248,0.30)",
+                borderRadius: 7,
+                color:        downloading ? "#555" : "#38bdf8",
+                cursor:       downloading ? "not-allowed" : "pointer",
+                fontSize:     12,
+                fontWeight:   600,
+                padding:      "6px 14px",
+              }}
+            >
+              <FileDown size={13} style={{ animation: downloading ? "spin 1s linear infinite" : "none" }} />
+              {downloading ? "Generando PDF..." : "Exportar PDF"}
+            </button>
+          )}
+          {/* Botón generar / regenerar */}
+          <button
+            onClick={generarResumen}
+            disabled={generating}
+            style={{
+              display:      "flex",
+              alignItems:   "center",
+              gap:          6,
+              background:   generating ? "#1a1a20" : "rgba(167,139,250,0.12)",
+              border:       "1px solid rgba(167,139,250,0.3)",
+              borderRadius: 7,
+              color:        generating ? "#555" : "#a78bfa",
+              cursor:       generating ? "not-allowed" : "pointer",
+              fontSize:     12,
+              fontWeight:   600,
+              padding:      "6px 14px",
+            }}
+          >
+            <RefreshCw size={13} style={{ animation: generating ? "spin 1s linear infinite" : "none" }} />
+            {generating ? "Generando con Gemini..." : resumen ? "Regenerar" : "Generar Resumen IA"}
+          </button>
+        </div>
       </div>
 
       {/* Spinner de carga */}

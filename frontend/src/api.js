@@ -195,6 +195,18 @@ export const api = {
   listarResumenes: () =>
     request("GET", "/v3/resumen/"),
 
+  // ─── F-08: Reportes PDF ─────────────────────────────────────────────────────
+  // GET /v3/reportes/resumen/{period} — descarga PDF del resumen mensual
+  // Retorna un Blob para descarga directa en el navegador
+  descargarResumenPDF: async (period) => {
+    const res = await fetch(`${BASE}/v3/reportes/resumen/${period}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return res.blob();
+  },
+
   // ═══════════════════════════════════════════════════════════════
   // Métodos genéricos — compatibilidad con componentes v3
   // Permiten llamadas estilo: api.get("/v3/...") y api.post("/v3/...", body)

@@ -14,6 +14,7 @@ import models
 from database import engine, get_db
 from routers import patrimonio, ingesta, transferencias, analytics, telegram, resumen as resumen_router
 from routers import financial_health as financial_health_router
+from routers import reportes as reportes_router
 from services import price_service, telegram_service
 from utils.timezone_utils import now_lima, iso_lima
 
@@ -64,6 +65,7 @@ app.include_router(analytics.router)
 app.include_router(telegram.router)
 app.include_router(resumen_router.router)   # F-03: Resumen Mensual IA
 app.include_router(financial_health_router.router)  # G-08: Radar de Salud Financiera
+app.include_router(reportes_router.router)           # F-08: Reportes PDF
 
 # ═══════════════════════════════════════════════════════════════
 # SCHEMAS (Pydantic)
