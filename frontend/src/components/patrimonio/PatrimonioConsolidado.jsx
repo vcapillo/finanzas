@@ -4,8 +4,9 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "../../api.js";
-import AssetCard     from "./AssetCard.jsx";
-import NetWorthChart from "./NetWorthChart.jsx";
+import AssetCard             from "./AssetCard.jsx";
+import NetWorthChart         from "./NetWorthChart.jsx";
+import RadarSaludFinanciera  from "./RadarSaludFinanciera.jsx";  // G-08
 
 // ── Mismo objeto de estilos que App.jsx ───────────────────────
 const s = {
@@ -39,6 +40,10 @@ const fmtPEN = (n) =>
 export default function PatrimonioConsolidado() {
   const [data,       setData]       = useState(null);
   const [loading,    setLoading]    = useState(true);
+  const [period,     setPeriod]     = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [error,      setError]      = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -196,6 +201,9 @@ export default function PatrimonioConsolidado() {
           </div>
         );
       })}
+
+      {/* ── G-08: RADAR DE SALUD FINANCIERA ── */}
+      <RadarSaludFinanciera period={period} />
 
       {/* ── GRÁFICO HISTÓRICO ── */}
       <div style={s.card}>
