@@ -31,6 +31,9 @@ import IngestaExtracto        from "./components/ingesta/IngestaExtracto";
 import TransferenciasPanel    from "./components/transferencias/TransferenciasPanel";
 import HelpPanel              from "./components/help/HelpPanel";
 
+// ── F-07: Alertas inteligentes de anomalías ─────────────
+import AlertasPanel           from "./components/alertas/AlertasPanel";
+
 // ─────────────────────────────────────────────────────────────
 const TABS = [
   { id:"dashboard",   icon:<LayoutDashboard size={15}/>, label:"Dashboard"       },
@@ -374,6 +377,9 @@ export default function App({ onLogout }) {
               <Metric label="Deudas"            value={fmtN(metrics.deudas)}           color="#a78bfa" icon="💳" sub={`${metrics.ratioDeuda.toFixed(1)}%`}/>
               <Metric label="Ahorros"           value={fmtN(metrics.ahorros)}          color="#38bdf8" icon="🏦" sub={`Tasa ${metrics.tasaAhorro.toFixed(1)}%`}/>
             </div>
+            {/* F-07 — Alertas inteligentes */}
+            <AlertasPanel period={period} />
+
             {/* Gráficos */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
               <div style={s.card}>

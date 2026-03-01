@@ -169,6 +169,19 @@ export const api = {
   refreshPrices:     () => request("POST", "/investments/prices/refresh"),
   getScheduleInfo:   () => request("GET",  "/investments/prices/schedule"),
 
+  // ─── F-07: Alertas inteligentes de anomalías ─────────────
+  // GET /v3/analytics/alertas/{period}?umbral_ahorro=10
+  getAlertas: (period, umbralAhorro = 10) =>
+    request("GET", `/v3/analytics/alertas/${period}?umbral_ahorro=${umbralAhorro}`),
+
+  // GET /v3/analytics/resumen/{period}
+  getResumenAnalytics: (period) =>
+    request("GET", `/v3/analytics/resumen/${period}`),
+
+  // GET /v3/analytics/comparativa?periodo_actual=X&periodo_anterior=Y
+  getComparativaAnalytics: (actual, anterior) =>
+    request("GET", `/v3/analytics/comparativa?periodo_actual=${actual}&periodo_anterior=${anterior}`),
+
   // ═══════════════════════════════════════════════════════════════
   // Métodos genéricos — compatibilidad con componentes v3
   // Permiten llamadas estilo: api.get("/v3/...") y api.post("/v3/...", body)
