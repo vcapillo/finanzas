@@ -15,6 +15,7 @@ import logging
 import calendar
 from datetime import datetime, timezone
 from typing import Optional
+from utils.timezone_utils import now_lima, now_lima_naive, today_lima
 
 import requests
 import yfinance as yf
@@ -65,13 +66,13 @@ def _upsert_price(db: Session, ticker: str, price: float, source: str) -> None:
     if existing:
         existing.price_usd  = price
         existing.source     = source
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = now_lima_naive()   # Lima UTC-5
     else:
         db.add(models.PriceCache(
             ticker    = ticker.upper(),
             price_usd = price,
             source    = source,
-            updated_at= datetime.utcnow(),
+            updated_at= now_lima_naive(),         # Lima UTC-5
         ))
     db.commit()
 
@@ -134,7 +135,7 @@ def job_update_crypto_prices() -> None:
                 _upsert_price(db, ticker, price, "coingecko")
                 updated += 1
 
-        _last_refresh = datetime.now(timezone.utc)
+        _last_refresh = now_lima()   # Lima UTC-5
         logger.info(f"[Crypto] {updated}/{len(tickers)} precios actualizados.")
 
     except Exception as e:
@@ -310,9 +311,9 @@ def job_update_stock_prices() -> None:
 def job_auto_snapshot() -> None:
     """
     Genera snapshot automático del portafolio al cierre de cada mes.
-    Se ejecuta diariamente a las 23:00 y verifica si es el último día del mes.
+    Se ejecuta diariamente a las 23:00 Lima y verifica si es el último día del mes.
     """
-    now   = datetime.now()
+    now   = now_lima()   # ← hora Lima UTC-5
     today = now.day
     last_day = calendar.monthrange(now.year, now.month)[1]
 
@@ -416,7 +417,7 @@ def refresh_all_now() -> dict:
     job_update_exchange_rate()
     job_update_crypto_prices()
     job_update_stock_prices()
-    return {"message": "Actualización completada", "timestamp": datetime.utcnow().isoformat()}
+    return {"message": "Actualización completada", "timestamp": now_lima().isoformat()}
 
 
 def get_exchange_rate() -> float:

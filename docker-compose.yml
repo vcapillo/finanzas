@@ -41,10 +41,12 @@ services:
       # Permitir peticiones desde el dominio que configures en NPM
       - CORS_ORIGINS=http://${APP_DOMAIN:-localhost},https://${APP_DOMAIN:-localhost}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_API_KEY_ALT=${GEMINI_API_KEY_ALT:-}   # F-03: key alternativa si la principal agota cuota
       - DEDUP_THRESHOLD=0.75
       - EXCHANGE_RATE_FALLBACK=3.70
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}    # F-01: Bot Telegram
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}        # F-01: Bot Telegram
+      - TZ=America/Lima                             # Zona horaria Peru UTC-5
     networks:
       - finanzas_net
     restart: unless-stopped
@@ -62,6 +64,8 @@ services:
       args:
         - VITE_API_URL=/api
     container_name: finanzas-frontend
+    environment:
+      - TZ=America/Lima                             # Zona horaria Peru UTC-5
     ports:
       - "8090:80"    # NPM apunta a este puerto
     networks:

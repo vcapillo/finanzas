@@ -182,6 +182,19 @@ export const api = {
   getComparativaAnalytics: (actual, anterior) =>
     request("GET", `/v3/analytics/comparativa?periodo_actual=${actual}&periodo_anterior=${anterior}`),
 
+  // ─── F-03: Resumen Mensual con IA ───────────────────────────────────────────
+  // POST /v3/resumen/{period} — genera (o regenera) el resumen con Gemini
+  generarResumen: (period) =>
+    request("POST", `/v3/resumen/${period}`),
+
+  // GET /v3/resumen/{period} — obtiene el resumen guardado
+  getResumen: (period) =>
+    request("GET", `/v3/resumen/${period}`),
+
+  // GET /v3/resumen/ — lista todos los períodos con resumen disponible
+  listarResumenes: () =>
+    request("GET", "/v3/resumen/"),
+
   // ═══════════════════════════════════════════════════════════════
   // Métodos genéricos — compatibilidad con componentes v3
   // Permiten llamadas estilo: api.get("/v3/...") y api.post("/v3/...", body)

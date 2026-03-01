@@ -250,14 +250,95 @@ def _local_parse(raw_text: str, period: str, settings_rules: list = None) -> dic
 
 # ── SERVICIO ─────────────────────────────────────────────────
 
+# ── Excepciones del servicio ─────────────────────────────────
+
+class GeminiQuotaExceeded(Exception):
+    """Ambas keys (principal y alternativa) superaron la cuota de Gemini."""
+    pass
+
+class GeminiError(Exception):
+    """Error genérico de Gemini no relacionado a cuota."""
+    pass
+
+
 class GeminiService:
 
     def __init__(self):
-        api_key = os.environ.get("GEMINI_API_KEY")
+        api_key     = os.environ.get("GEMINI_API_KEY")
+        api_key_alt = os.environ.get("GEMINI_API_KEY_ALT")
+
         if not api_key:
             raise EnvironmentError("GEMINI_API_KEY no está definida en las variables de entorno.")
-        self._api_key = api_key
-        self.client   = genai.Client(api_key=api_key)
+
+        self._key_primary = api_key
+        self._key_alt     = api_key_alt
+
+        # Clientes separados por key — se crean una vez y se reutilizan
+        self._client_primary = genai.Client(api_key=api_key)
+        self._client_alt     = genai.Client(api_key=api_key_alt) if api_key_alt else None
+
+        import logging as _logging
+        self._log = _logging.getLogger("gemini_service")
+        if api_key_alt:
+            self._log.info("[Gemini] Key alternativa configurada — fallback automático activo")
+        else:
+            self._log.info("[Gemini] Solo key principal configurada (sin GEMINI_API_KEY_ALT)")
+
+    # ── Método base: generate_text con fallback de keys ──────────
+    def generate_text(self, system_prompt: str, user_prompt: str) -> tuple[str, str]:
+        """
+        Llama a Gemini con fallback automático de key.
+        Retorna (texto_respuesta, fuente) donde fuente = 'GEMINI_PRIMARY' | 'GEMINI_ALT'.
+        Lanza GeminiQuotaExceeded si ambas keys están agotadas.
+        Lanza GeminiError para errores no relacionados a cuota.
+        """
+        keys = [("GEMINI_PRIMARY", self._client_primary)]
+        if self._client_alt:
+            keys.append(("GEMINI_ALT", self._client_alt))
+
+        last_error = None
+
+        for label, client in keys:
+            try:
+                self._log.info(f"[Gemini] Llamada con key {label}")
+                response = client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=user_prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                    ),
+                )
+                self._log.info(f"[Gemini] Respuesta OK con key {label}")
+                return response.text.strip(), label
+
+            except ClientError as e:
+                is_quota = (
+                    getattr(e, "status_code", None) == 429
+                    or getattr(e, "code", None) == 429
+                    or "RESOURCE_EXHAUSTED" in str(e)
+                    or "429" in str(e)
+                )
+                if is_quota:
+                    self._log.warning(
+                        f"[Gemini] Cuota agotada en key {label}."
+                        f"{' Intentando key alternativa...' if label == 'GEMINI_PRIMARY' and self._client_alt else ' Sin más opciones.'}"
+                    )
+                    last_error = e
+                    continue  # Probar con la siguiente key
+                else:
+                    self._log.error(f"[Gemini] Error no recuperable con key {label}: {e}")
+                    raise GeminiError(str(e)) from e
+
+            except Exception as e:
+                self._log.error(f"[Gemini] Error inesperado con key {label}: {e}")
+                raise GeminiError(str(e)) from e
+
+        # Ambas keys agotadas
+        msg = (
+            "Cuota de Gemini superada en todas las keys configuradas. "
+            "Espera unos minutos o agrega GEMINI_API_KEY_ALT en el .env con una segunda cuenta Google."
+        )
+        raise GeminiQuotaExceeded(msg)
 
     async def parse_extracto(
         self,
@@ -300,15 +381,10 @@ TRANSACCIONES EXISTENTES (para detección de duplicados):
 {json.dumps(existing_summary, ensure_ascii=False, indent=2)}
 """
         # ── Intento con Gemini ────────────────────────────────
+        # Intento con Gemini (fallback automatico de key incluido)
         try:
-            response = self.client.models.generate_content(
-                model=MODEL_NAME,
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT_PARSER,
-                ),
-            )
-            raw_resp = response.text.strip()
+            raw_resp, fuente = self.generate_text(SYSTEM_PROMPT_PARSER, user_prompt)
+
             # Limpiar bloques markdown
             if raw_resp.startswith("```"):
                 raw_resp = raw_resp.split("```")[1]
@@ -317,28 +393,27 @@ TRANSACCIONES EXISTENTES (para detección de duplicados):
             raw_resp = raw_resp.rstrip("`").strip()
 
             result = json.loads(raw_resp)
-            result["_source"] = "GEMINI"
+            result["_source"] = fuente
             return result
 
-        except ClientError as e:
-            # 429 = cuota agotada → fallback local
-            if getattr(e, 'status_code', None) == 429 or getattr(e, 'code', None) == 429 or "RESOURCE_EXHAUSTED" in str(e):
-                import logging
-                logging.warning(
-                    "Gemini cuota agotada (429). Usando parser local de fallback. "
-                    "Para resolver: habilita billing en https://aistudio.google.com"
-                )
-                result = _local_parse(raw_text, period)
-                result["_warning"] = (
-                    "⚠️ Gemini sin cuota disponible — resultado generado por el "
-                    "clasificador local. Activa billing en Google AI Studio para "
-                    "usar IA completa."
-                )
-                return result
-            raise   # Otro error de cliente → propagar
+        except GeminiQuotaExceeded as e:
+            import logging
+            logging.warning(f"[Gemini] {e} - Usando parser local de fallback.")
+            result = _local_parse(raw_text, period)
+            result["_warning"] = (
+                "Cuota de Gemini agotada en todas las keys - resultado generado por el "
+                "clasificador local. Agrega GEMINI_API_KEY_ALT en el .env para ampliar la cuota."
+            )
+            return result
+
+        except GeminiError as e:
+            import logging
+            logging.error(f"[Gemini] Error no recuperable: {e}")
+            result = _local_parse(raw_text, period)
+            result["_warning"] = f"Error de Gemini: {e}. Se uso el parser local."
+            return result
 
         except json.JSONDecodeError:
-            # Gemini devolvió algo que no es JSON válido → fallback
             result = _local_parse(raw_text, period)
-            result["_warning"] = "⚠️ Gemini devolvió respuesta inválida. Se usó el parser local."
+            result["_warning"] = "Gemini devolvio respuesta invalida. Se uso el parser local."
             return result

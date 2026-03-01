@@ -12,8 +12,9 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 import models
 from database import engine, get_db
-from routers import patrimonio, ingesta, transferencias, analytics, telegram
+from routers import patrimonio, ingesta, transferencias, analytics, telegram, resumen as resumen_router
 from services import price_service, telegram_service
+from utils.timezone_utils import now_lima, iso_lima
 
 # ─── Crear tablas al iniciar ──────────────────────────────────
 models.Base.metadata.create_all(bind=engine)
@@ -25,6 +26,15 @@ async def lifespan(app: FastAPI):
     """Inicia schedulers al arrancar; los detiene al cerrar."""
     price_service.start_scheduler()
     telegram_service.start_telegram_scheduler()
+    # F-03: registrar job de resumen mensual en el scheduler de precios
+    from services.resumen_service import job_generar_resumen_fin_de_mes
+    from apscheduler.triggers.cron import CronTrigger as _CronTrigger
+    price_service._scheduler.add_job(
+        job_generar_resumen_fin_de_mes,
+        trigger=_CronTrigger(hour=23, minute=30, timezone="America/Lima"),
+        id="resumen_mensual",
+        replace_existing=True,
+    )
     yield
     price_service.stop_scheduler()
     telegram_service.stop_telegram_scheduler()
@@ -51,6 +61,7 @@ app.include_router(ingesta.router)
 app.include_router(transferencias.router)
 app.include_router(analytics.router)
 app.include_router(telegram.router)
+app.include_router(resumen_router.router)   # F-03: Resumen Mensual IA
 
 # ═══════════════════════════════════════════════════════════════
 # SCHEMAS (Pydantic)
@@ -292,7 +303,7 @@ def export_all(db: Session = Depends(get_db)):
 
     return {
         "version": "3.0.0",
-        "exported_at": __import__("datetime").datetime.utcnow().isoformat(),
+        "exported_at": iso_lima(),   # Lima UTC-5
         "transactions": [
             {
                 "id": t.id, "date": t.date, "period": t.period,

@@ -254,6 +254,21 @@ class InternalTransfer(Base):
 
 # ── F-01: CONFIGURACIÓN BOT TELEGRAM ────────────────────────
 
+class ResumenMensual(Base):
+    """
+    F-03: Resumen mensual de salud financiera generado por Gemini.
+    Un registro por período (YYYY-MM). Se sobreescribe si se regenera.
+    """
+    __tablename__ = "resumenes_mensuales"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    periodo        = Column(String(7),  unique=True, nullable=False, index=True)  # 'YYYY-MM'
+    semaforo       = Column(String(10), default="amarillo")                        # verde|amarillo|rojo
+    contenido_json = Column(Text, nullable=False)
+    fuente         = Column(String(20), default="GEMINI")                          # GEMINI | LOCAL | ERROR
+    generado_en    = Column(DateTime, default=datetime.utcnow)
+
+
 class AppTelegramConfig(Base):
     """
     Configuración del bot de notificaciones Telegram.

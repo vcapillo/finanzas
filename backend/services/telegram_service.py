@@ -11,6 +11,7 @@ import os
 import logging
 from datetime import datetime, date, timedelta
 from typing import Optional
+from utils.timezone_utils import now_lima, today_lima
 
 import httpx
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -58,7 +59,7 @@ def send_message(text: str, token: str = None, chat_id: str = None,
 
 def send_test_message(token: str = None, chat_id: str = None) -> dict:
     """Mensaje de prueba para verificar conectividad."""
-    now = datetime.now().strftime("%d/%m/%Y %H:%M")
+    now = now_lima().strftime("%d/%m/%Y %H:%M")  # Lima UTC-5
     text = (
         "✅ <b>FinanzasVH — Conexión exitosa</b>\n"
         f"📅 {now}\n\n"
@@ -107,7 +108,7 @@ def build_daily_notification(profile: dict, settings: dict,
     Construye el mensaje diario de notificación.
     Retorna None si no hay eventos relevantes para hoy.
     """
-    hoy       = date.today()
+    hoy       = today_lima()          # Lima UTC-5 (no UTC del servidor)
     hoy_str   = hoy.strftime("%d/%m/%Y")
     dia_hoy   = hoy.day
     eventos   = []

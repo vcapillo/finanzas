@@ -34,6 +34,9 @@ import HelpPanel              from "./components/help/HelpPanel";
 // ── F-07: Alertas inteligentes de anomalías ─────────────
 import AlertasPanel           from "./components/alertas/AlertasPanel";
 
+// ── F-03: Resumen Mensual con IA ─────────────────
+import ResumenMensualPanel    from "./components/resumen/ResumenMensualPanel";
+
 // ─────────────────────────────────────────────────────────────
 const TABS = [
   { id:"dashboard",   icon:<LayoutDashboard size={15}/>, label:"Dashboard"       },
@@ -466,6 +469,9 @@ export default function App({ onLogout }) {
                 </div>
               );
             })()}
+            {/* F-03 — Resumen Mensual con IA */}
+            <ResumenMensualPanel period={period} />
+
             {/* Recomendaciones */}
             {(()=>{
               // Derivar nombres de cuentas de ahorro e inversión desde settings
