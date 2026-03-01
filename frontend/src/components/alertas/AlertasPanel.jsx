@@ -178,7 +178,7 @@ export default function AlertasPanel({ period }) {
             fontWeight: 700, fontSize: 11, letterSpacing: "0.5px",
             color: total > 0 ? headerColor : "#444",
           }}>
-            ALERTAS INTELIGENTES · F-07
+            ALERTAS INTELIGENTES
           </span>
           {loading && <RefreshCw size={11} color="#444" />}
           {!loading && total > 0 && (

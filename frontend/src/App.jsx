@@ -467,14 +467,23 @@ export default function App({ onLogout }) {
               );
             })()}
             {/* Recomendaciones */}
-            <div style={s.card}>
-              <p style={{color:"#555",fontSize:11,fontWeight:600,margin:"0 0 12px",letterSpacing:"0.5px"}}>RECOMENDACIONES</p>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {metrics.tasaAhorro<10&&<div style={{background:"rgba(56,189,248,0.07)",border:"1px solid rgba(56,189,248,0.18)",borderRadius:8,padding:"12px 14px"}}><p style={{color:"#38bdf8",fontWeight:700,fontSize:13,margin:"0 0 4px"}}>Incrementa tu ahorro</p><p style={{color:"#666",fontSize:12,margin:0}}>Meta 10% = {fmtN(metrics.ingresos*0.10)}/mes. Transfiere a Agora el día {(profile?.pay_day||6)+1}.</p></div>}
-                {metrics.ratioDeuda>25&&<div style={{background:"rgba(167,139,250,0.07)",border:"1px solid rgba(167,139,250,0.18)",borderRadius:8,padding:"12px 14px"}}><p style={{color:"#a78bfa",fontWeight:700,fontSize:13,margin:"0 0 4px"}}>Controla el ratio de deuda</p><p style={{color:"#666",fontSize:12,margin:0}}>Deudas = {metrics.ratioDeuda.toFixed(1)}% (límite: 25%). Paga tarjetas en total para evitar 74.99% TEA.</p></div>}
-                {metrics.saldoNeto>500&&<div style={{background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.18)",borderRadius:8,padding:"12px 14px"}}><p style={{color:"#22c55e",fontWeight:700,fontSize:13,margin:"0 0 4px"}}>Aprovecha el excedente</p><p style={{color:"#666",fontSize:12,margin:0}}>Tienes {fmtN(metrics.saldoNeto)} disponible. Considera transferir a Agora o al portafolio crypto.</p></div>}
-              </div>
-            </div>
+            {(()=>{
+              // Derivar nombres de cuentas de ahorro e inversión desde settings
+              const cuentasAhorro     = (settings?.accounts||[]).filter(a=>a.active&&["ahorro","saving"].includes((a.type||a.tipo||a.kind||"").toLowerCase())).map(a=>a.name);
+              const cuentasInversion  = (settings?.accounts||[]).filter(a=>a.active&&["inversión","inversion","investment","cripto","crypto","broker"].some(t=>(a.type||a.tipo||a.kind||"").toLowerCase().includes(t))).map(a=>a.name);
+              const destAhorro   = cuentasAhorro.length>0   ? cuentasAhorro.join(" o ")   : "tu cuenta de ahorro";
+              const destInversion= cuentasInversion.length>0? cuentasInversion.join(" o ") : "tus inversiones";
+              return (
+                <div style={s.card}>
+                  <p style={{color:"#555",fontSize:11,fontWeight:600,margin:"0 0 12px",letterSpacing:"0.5px"}}>RECOMENDACIONES</p>
+                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                    {metrics.tasaAhorro<10&&<div style={{background:"rgba(56,189,248,0.07)",border:"1px solid rgba(56,189,248,0.18)",borderRadius:8,padding:"12px 14px"}}><p style={{color:"#38bdf8",fontWeight:700,fontSize:13,margin:"0 0 4px"}}>Incrementa tu ahorro</p><p style={{color:"#666",fontSize:12,margin:0}}>Meta 10% = {fmtN(metrics.ingresos*0.10)}/mes. Transfiere a {destAhorro} el día {(profile?.pay_day||6)+1}.</p></div>}
+                    {metrics.ratioDeuda>25&&<div style={{background:"rgba(167,139,250,0.07)",border:"1px solid rgba(167,139,250,0.18)",borderRadius:8,padding:"12px 14px"}}><p style={{color:"#a78bfa",fontWeight:700,fontSize:13,margin:"0 0 4px"}}>Controla el ratio de deuda</p><p style={{color:"#666",fontSize:12,margin:0}}>Deudas = {metrics.ratioDeuda.toFixed(1)}% (límite: 25%). Paga tarjetas en total para evitar intereses.</p></div>}
+                    {metrics.saldoNeto>500&&<div style={{background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.18)",borderRadius:8,padding:"12px 14px"}}><p style={{color:"#22c55e",fontWeight:700,fontSize:13,margin:"0 0 4px"}}>Aprovecha el excedente</p><p style={{color:"#666",fontSize:12,margin:0}}>Tienes {fmtN(metrics.saldoNeto)} disponible. Considera transferir a {destAhorro} o a {destInversion}.</p></div>}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 

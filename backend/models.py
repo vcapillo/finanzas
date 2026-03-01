@@ -251,3 +251,22 @@ class InternalTransfer(Base):
     dest_tx_id      = Column(Integer, nullable=True)
     created_at      = Column(DateTime, default=datetime.utcnow)
 
+
+# ── F-01: CONFIGURACIÓN BOT TELEGRAM ────────────────────────
+
+class AppTelegramConfig(Base):
+    """
+    Configuración del bot de notificaciones Telegram.
+    Un solo registro (id=1). Token/chat_id pueden venir de
+    variables de entorno o guardarse aquí para edición desde la UI.
+    """
+    __tablename__ = "app_telegram_config"
+
+    id                = Column(Integer, primary_key=True, default=1)
+    enabled           = Column(Boolean, default=False)       # Bot activo / inactivo
+    token             = Column(String(200), nullable=True)   # Override del env var
+    chat_id           = Column(String(50),  nullable=True)   # Override del env var
+    anticipation_days = Column(Integer, default=3)           # Días antes del evento
+    notify_hour       = Column(Integer, default=8)           # Hora de envío (Lima)
+    updated_at        = Column(DateTime(timezone=True), onupdate=func.now())
+

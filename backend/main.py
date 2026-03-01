@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 import models
 from database import engine, get_db
-from routers import patrimonio, ingesta, transferencias, analytics
-from services import price_service
+from routers import patrimonio, ingesta, transferencias, analytics, telegram
+from services import price_service, telegram_service
 
 # ─── Crear tablas al iniciar ──────────────────────────────────
 models.Base.metadata.create_all(bind=engine)
@@ -22,10 +22,12 @@ models.Base.metadata.create_all(bind=engine)
 # ─── Lifespan: scheduler de precios ──────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Inicia el scheduler de precios al arrancar; lo detiene al cerrar."""
+    """Inicia schedulers al arrancar; los detiene al cerrar."""
     price_service.start_scheduler()
+    telegram_service.start_telegram_scheduler()
     yield
     price_service.stop_scheduler()
+    telegram_service.stop_telegram_scheduler()
 
 
 app = FastAPI(
@@ -48,6 +50,7 @@ app.include_router(patrimonio.router)
 app.include_router(ingesta.router)
 app.include_router(transferencias.router)
 app.include_router(analytics.router)
+app.include_router(telegram.router)
 
 # ═══════════════════════════════════════════════════════════════
 # SCHEMAS (Pydantic)

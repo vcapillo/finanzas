@@ -2,13 +2,15 @@
  * FinanzasVH — components/settings/SettingsPanel.jsx
  * Panel lateral de configuración: Perfil, Cuentas, Reglas, Ciclos, Categorías.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, Plus, Trash2, Settings } from "lucide-react";
 import { TYPE_CONFIG, ACCOUNT_TYPES, DEFAULT_CATEGORIES } from "../../constants/types.js";
 import { SYSTEM_RULES } from "../../constants/rules.js";
 import { compilePattern } from "../../utils/classify.js";
 import { fmtN } from "../../utils/format.js";
 import { s } from "../ui/shared.jsx";
+
+const API = import.meta.env.VITE_API_URL || "/api";
 
 export function SettingsPanel({ settings, profile: initialProfile, onSave, onSaveProfile, onClose }) {
   const [cfg, setCfg] = useState({
@@ -51,12 +53,69 @@ export function SettingsPanel({ settings, profile: initialProfile, onSave, onSav
   const [editAcc, setEditAcc] = useState(null);
   const [editRule,setEditRule]= useState(null);
 
+  // ── F-01 Telegram ───────────────────────────────────────────
+  const [tgCfg,   setTgCfg]   = useState({ enabled:false, anticipation_days:3, notify_hour:8 });
+  const [tgStatus,setTgStatus]= useState(null);   // {ready, token_configured, chat_id_configured, scheduler}
+  const [tgSaving,setTgSaving]= useState(false);
+  const [tgMsg,   setTgMsg]   = useState(null);   // {type:'ok'|'err', text}
+  const [tgPreview,setTgPreview]=useState(null);
+
+  useEffect(() => {
+    if (section !== "telegram") return;
+    fetch(`${API}/telegram/status`)
+      .then(r=>r.json())
+      .then(d=>{ setTgStatus(d); setTgCfg(c=>({...c, enabled:d.enabled, anticipation_days:d.anticipation_days, notify_hour:d.notify_hour})); })
+      .catch(()=>setTgStatus(null));
+  }, [section]);
+
+  const saveTgConfig = async () => {
+    setTgSaving(true); setTgMsg(null);
+    try {
+      const r = await fetch(`${API}/telegram/config`, { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(tgCfg) });
+      if (!r.ok) throw new Error(await r.text());
+      const refreshed = await fetch(`${API}/telegram/status`).then(r=>r.json());
+      setTgStatus(refreshed);
+      setTgMsg({type:"ok", text:"✅ Configuración guardada"});
+    } catch(e) { setTgMsg({type:"err", text:"❌ Error: "+e.message}); }
+    finally { setTgSaving(false); }
+  };
+
+  const sendTestMsg = async () => {
+    setTgMsg(null);
+    try {
+      const r = await fetch(`${API}/telegram/test`, { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail||r.statusText);
+      setTgMsg({type:"ok", text:"✅ Mensaje de prueba enviado — revisa tu Telegram"});
+    } catch(e) { setTgMsg({type:"err", text:"❌ "+e.message}); }
+  };
+
+  const sendNotifyNow = async () => {
+    setTgMsg(null);
+    try {
+      const r = await fetch(`${API}/telegram/notify/now`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({anticipation_days:tgCfg.anticipation_days}) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail||r.statusText);
+      setTgMsg({type:"ok", text: d.sent ? "✅ Notificación enviada" : "ℹ️ Sin eventos próximos — no se envió nada"});
+    } catch(e) { setTgMsg({type:"err", text:"❌ "+e.message}); }
+  };
+
+  const loadPreview = async () => {
+    setTgPreview(null);
+    try {
+      const r = await fetch(`${API}/telegram/preview?anticipation_days=${tgCfg.anticipation_days}`);
+      const d = await r.json();
+      setTgPreview(d);
+    } catch(e) { setTgPreview({has_events:false, preview:"Error al cargar vista previa"}); }
+  };
+
   const SECTIONS = [
     {id:"profile",   label:"👤 Perfil",       count: prof.recurring_services.length > 0 ? prof.recurring_services.length : null},
     {id:"accounts",  label:"🏦 Cuentas",       count: cfg.accounts.filter(a=>a.active).length},
     {id:"rules",     label:"⚡ Reglas",         count: cfg.custom_rules.length || null},
     {id:"cycles",    label:"📅 Ciclos",         count: cfg.billing_cycles.length || null},
     {id:"categories",label:"🗂️ Categorías",    count: null},
+    {id:"telegram",  label:"🔔 Telegram",       count: null},
   ];
 
   return (
@@ -426,6 +485,135 @@ export function SettingsPanel({ settings, profile: initialProfile, onSave, onSav
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ─── TELEGRAM ── */}
+          {section==="telegram"&&(
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+              {/* Estado actual */}
+              <div style={{background:"#111113",border:"1px solid #222226",borderRadius:10,padding:16}}>
+                <p style={{color:"#22d3ee",fontWeight:700,fontSize:11,margin:"0 0 14px",letterSpacing:"0.5px"}}>📡 ESTADO DEL BOT</p>
+                {tgStatus ? (
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                    {[
+                      {label:"Token",   ok:tgStatus.token_configured,   si:"Configurado",   no:"Falta TOKEN"},
+                      {label:"Chat ID", ok:tgStatus.chat_id_configured, si:"Configurado",   no:"Falta CHAT_ID"},
+                      {label:"Bot",     ok:tgStatus.ready,              si:"Listo",          no:"No activo"},
+                    ].map(item=>(
+                      <div key={item.label} style={{background:"#0a0a0c",borderRadius:7,padding:"10px 12px",textAlign:"center"}}>
+                        <div style={{fontSize:18,marginBottom:4}}>{item.ok?"✅":"⚠️"}</div>
+                        <div style={{color:"#888",fontSize:10,marginBottom:2}}>{item.label}</div>
+                        <div style={{color:item.ok?"#22c55e":"#f59e0b",fontWeight:700,fontSize:11}}>{item.ok?item.si:item.no}</div>
+                      </div>
+                    ))}
+                    {tgStatus.scheduler?.next_run&&(
+                      <div style={{gridColumn:"1/-1",background:"rgba(34,211,238,0.05)",border:"1px solid rgba(34,211,238,0.15)",borderRadius:6,padding:"8px 12px"}}>
+                        <span style={{color:"#555",fontSize:11}}>⏱ Próximo envío automático: </span>
+                        <span style={{color:"#22d3ee",fontSize:11,fontWeight:600}}>
+                          {new Date(tgStatus.scheduler.next_run).toLocaleString("es-PE",{timeZone:"America/Lima",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p style={{color:"#444",fontSize:12,textAlign:"center",padding:"8px 0"}}>Cargando estado...</p>
+                )}
+              </div>
+
+              {/* Configuración */}
+              <div style={{background:"#111113",border:"1px solid #222226",borderRadius:10,padding:16}}>
+                <p style={{color:"#22d3ee",fontWeight:700,fontSize:11,margin:"0 0 14px",letterSpacing:"0.5px"}}>⚙️ CONFIGURACIÓN</p>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+                  <div>
+                    <label style={s.label}>DÍAS DE ANTICIPACIÓN</label>
+                    <select style={s.select} value={tgCfg.anticipation_days}
+                      onChange={e=>setTgCfg(c=>({...c,anticipation_days:parseInt(e.target.value)}))}
+                    >
+                      {[1,2,3,5,7].map(d=><option key={d} value={d}>{d} día{d>1?"s":""} antes</option>)}
+                    </select>
+                    <p style={{color:"#444",fontSize:10,margin:"4px 0 0"}}>Notificará cuando un evento esté a este tiempo de ocurrir</p>
+                  </div>
+                  <div>
+                    <label style={s.label}>HORA DE ENVÍO</label>
+                    <select style={s.select} value={tgCfg.notify_hour}
+                      onChange={e=>setTgCfg(c=>({...c,notify_hour:parseInt(e.target.value)}))}
+                    >
+                      {[6,7,8,9,10].map(h=><option key={h} value={h}>{h}:00 AM (Lima)</option>)}
+                    </select>
+                    <p style={{color:"#444",fontSize:10,margin:"4px 0 0"}}>Hora peruana (UTC−5)</p>
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+                  <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+                    <div onClick={()=>setTgCfg(c=>({...c,enabled:!c.enabled}))}
+                      style={{width:40,height:22,borderRadius:11,background:tgCfg.enabled?"#22c55e":"#333",position:"relative",transition:"background .2s",cursor:"pointer",flexShrink:0}}>
+                      <div style={{width:16,height:16,borderRadius:"50%",background:"#fff",position:"absolute",top:3,left:tgCfg.enabled?21:3,transition:"left .2s"}}/>
+                    </div>
+                    <span style={{color:tgCfg.enabled?"#22c55e":"#555",fontWeight:700,fontSize:13}}>
+                      {tgCfg.enabled?"Bot activado":"Bot desactivado"}
+                    </span>
+                  </label>
+                  <span style={{color:"#333",fontSize:11}}>{tgCfg.enabled?"Recibirás notificaciones diarias a las "+tgCfg.notify_hour+":00":"El bot no enviará mensajes"}</span>
+                </div>
+                <p style={{color:"#444",fontSize:11,margin:"0 0 14px",background:"#0a0a0c",borderRadius:6,padding:"8px 12px",borderLeft:"3px solid #22d3ee"}}>
+                  💡 El <strong style={{color:"#22d3ee"}}>TELEGRAM_BOT_TOKEN</strong> y <strong style={{color:"#22d3ee"}}>TELEGRAM_CHAT_ID</strong>
+                  {" "}se configuran como variables de entorno en el <code style={{background:"#111",padding:"1px 4px",borderRadius:3}}>.env</code>. No se almacenan en la interfaz por seguridad.
+                </p>
+                <button onClick={saveTgConfig} disabled={tgSaving}
+                  style={{...s.btn,background:"linear-gradient(135deg,#22d3ee,#0ea5e9)",color:"#000",fontWeight:700,padding:"8px 20px",fontSize:12,width:"100%"}}>
+                  {tgSaving?"Guardando...":"💾 Guardar configuración"}
+                </button>
+                {tgMsg&&<p style={{margin:"8px 0 0",fontSize:12,color:tgMsg.type==="ok"?"#22c55e":"#ef4444",textAlign:"center"}}>{tgMsg.text}</p>}
+              </div>
+
+              {/* Acciones */}
+              <div style={{background:"#111113",border:"1px solid #222226",borderRadius:10,padding:16}}>
+                <p style={{color:"#22d3ee",fontWeight:700,fontSize:11,margin:"0 0 14px",letterSpacing:"0.5px"}}>🧪 PRUEBAS Y ACCIONES</p>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+                  <button onClick={sendTestMsg}
+                    style={{...s.btn,background:"rgba(34,211,238,0.1)",color:"#22d3ee",border:"1px solid rgba(34,211,238,0.3)",padding:"10px",fontSize:12,flexDirection:"column",gap:4,height:60}}>
+                    📨<br/><span style={{fontSize:10}}>Mensaje prueba</span>
+                  </button>
+                  <button onClick={sendNotifyNow}
+                    style={{...s.btn,background:"rgba(34,197,94,0.1)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",padding:"10px",fontSize:12,flexDirection:"column",gap:4,height:60}}>
+                    🔔<br/><span style={{fontSize:10}}>Notificar ahora</span>
+                  </button>
+                  <button onClick={loadPreview}
+                    style={{...s.btn,background:"rgba(167,139,250,0.1)",color:"#a78bfa",border:"1px solid rgba(167,139,250,0.3)",padding:"10px",fontSize:12,flexDirection:"column",gap:4,height:60}}>
+                    👁<br/><span style={{fontSize:10}}>Vista previa</span>
+                  </button>
+                </div>
+                {tgPreview&&(
+                  <div style={{background:"#0a0a0c",border:"1px solid #1a1a20",borderRadius:8,padding:14}}>
+                    <p style={{color:"#555",fontSize:10,fontWeight:700,margin:"0 0 8px",letterSpacing:"0.5px"}}>PREVIEW DEL MENSAJE DE HOY</p>
+                    {tgPreview.has_events ? (
+                      <pre style={{color:"#d0d0d8",fontSize:11,margin:0,whiteSpace:"pre-wrap",fontFamily:"monospace",lineHeight:1.6}}>{tgPreview.preview.replace(/<[^>]+>/g,"")}</pre>
+                    ) : (
+                      <p style={{color:"#555",fontSize:12,margin:0,textAlign:"center"}}>ℹ️ Sin eventos próximos — no se enviaría nada hoy</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Qué notifica */}
+              <div style={{background:"#111113",border:"1px solid #222226",borderRadius:10,padding:16}}>
+                <p style={{color:"#555",fontWeight:700,fontSize:11,margin:"0 0 12px",letterSpacing:"0.5px"}}>📋 QUÉ NOTIFICA EL BOT</p>
+                {[
+                  {icon:"💳", text:"Vencimientos de tarjeta (VISA BBVA, VISA iO) con la anticipación configurada"},
+                  {icon:"✂️", text:"Días de corte de tarjeta para revisión de cargos"},
+                  {icon:"🔁", text:"Servicios recurrentes programados (Luz, Internet, Colegio, etc.)"},
+                  {icon:"💰", text:"Día de pago de sueldo con el monto esperado"},
+                  {icon:"⏰", text:"Envío automático cada día a las 8:00 AM hora Lima"},
+                ].map((item,i)=>(
+                  <div key={i} style={{display:"flex",gap:10,marginBottom:8,alignItems:"flex-start"}}>
+                    <span style={{fontSize:16,flexShrink:0}}>{item.icon}</span>
+                    <span style={{color:"#666",fontSize:12,lineHeight:1.5}}>{item.text}</span>
+                  </div>
+                ))}
+              </div>
+
             </div>
           )}
 
