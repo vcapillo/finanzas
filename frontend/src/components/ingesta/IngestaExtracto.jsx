@@ -11,26 +11,17 @@ import { Zap, CheckCircle2, AlertTriangle, Settings, Plus, X, ArrowRight, Upload
 import { api } from "../../api.js";
 import BandejaDuplicados from "./BandejaDuplicados.jsx";
 import * as XLSX from "xlsx";
+import * as pdfjsLib from "pdfjs-dist";
 
-// ── Extractor de texto PDF vía pdfjs CDN (lazy load) ─────────
-let _pdfjsLoaded = false;
-async function loadPdfJs() {
-  if (_pdfjsLoaded) return window.pdfjsLib;
-  await new Promise((res, rej) => {
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-    s.onload = res; s.onerror = rej;
-    document.head.appendChild(s);
-  });
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  _pdfjsLoaded = true;
-  return window.pdfjsLib;
-}
+// ── Extractor de texto PDF vía pdfjs-dist (instalado localmente, sin CDN) ────
+// Configura el worker usando URL relativa para que Vite lo empaquete
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.js",
+  import.meta.url
+).href;
 
 async function extractTextFromPDF(arrayBuffer) {
-  const pdfjs = await loadPdfJs();
-  const pdf   = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+  const pdf   = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const pages = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page    = await pdf.getPage(p);
