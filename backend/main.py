@@ -5,6 +5,7 @@ FastAPI + SQLAlchemy + SQLite
 import os
 from typing import Optional
 from datetime import datetime
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -12,14 +13,26 @@ from pydantic import BaseModel, Field
 import models
 from database import engine, get_db
 from routers import patrimonio, ingesta, transferencias, analytics
+from services import price_service
 
 # ─── Crear tablas al iniciar ──────────────────────────────────
 models.Base.metadata.create_all(bind=engine)
 
+
+# ─── Lifespan: scheduler de precios ──────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Inicia el scheduler de precios al arrancar; lo detiene al cerrar."""
+    price_service.start_scheduler()
+    yield
+    price_service.stop_scheduler()
+
+
 app = FastAPI(
     title="FinanzasVH API",
     description="Sistema de gestión financiera personal",
-    version="3.0.0"
+    version="3.1.0",
+    lifespan=lifespan,
 )
 
 # ─── CORS — permite que el frontend React acceda ──────────────
@@ -427,6 +440,47 @@ def save_settings(data: SettingsIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(row)
     return {"message": "Configuración guardada", "ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════
+# F-02: PRECIOS AUTOMÁTICOS — Caché y scheduler
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/investments/prices/current")
+def get_current_prices(db: Session = Depends(get_db)):
+    """
+    Devuelve todos los precios en caché actualizados por el scheduler.
+    Incluye tipo de cambio USD/PEN y timestamp de última actualización.
+    """
+    return price_service.get_cached_prices(db)
+
+
+@app.post("/investments/prices/refresh")
+def refresh_prices():
+    """
+    Dispara actualización manual inmediata de todos los precios.
+    útil para forzar sincronización sin esperar el scheduler.
+    """
+    result = price_service.refresh_all_now()
+    return result
+
+
+@app.get("/investments/prices/schedule")
+def get_schedule_info():
+    """
+    Informa el estado del scheduler y las próximas ejecuciones.
+    """
+    from services.price_service import _scheduler
+    if not _scheduler or not _scheduler.running:
+        return {"running": False, "jobs": []}
+
+    jobs = []
+    for job in _scheduler.get_jobs():
+        jobs.append({
+            "id":       job.id,
+            "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+        })
+    return {"running": True, "jobs": jobs}
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -1,82 +1,86 @@
 /**
  * FinanzasVH — components/inversiones/InversionesTab.jsx
  * Portafolio de inversiones: crypto + acciones con precios en tiempo real.
+ * F-02: Precios actualizados automáticamente por scheduler backend (APScheduler).
  */
 import { useState, useEffect } from "react";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, LineChart, Line, CartesianGrid, Legend
 } from "recharts";
-import { RefreshCw, Plus, Save, Edit2, Trash2 } from "lucide-react";
+import { RefreshCw, Plus, Save, Edit2, Trash2, Clock, Zap } from "lucide-react";
+import { api } from "../../api.js";
 import { COINGECKO_IDS } from "../../constants/rules.js";
 import { s, Metric, TTipUSD, TTip } from "../ui/shared.jsx";
 
 export default function InversionesTab({ investments, snapshots, onAdd, onEdit, onDelete, onSaveSnapshot, onDeleteSnapshot }) {
-  const [prices,      setPrices]      = useState({});
-  const [exRate,      setExRate]      = useState(3.72);
-  const [loading,     setLoading]     = useState(false);
-  const [showForm,    setShowForm]    = useState(false);
-  const [editId,      setEditId]      = useState(null);
-  const [manualPrices,setManualPrices]= useState({});
-  const [inputValues, setInputValues] = useState({});
+  const [prices,       setPrices]      = useState({});
+  const [exRate,       setExRate]       = useState(3.72);
+  const [loading,      setLoading]      = useState(false);
+  const [refreshing,   setRefreshing]   = useState(false);
+  const [lastUpdated,  setLastUpdated]  = useState(null);   // F-02: timestamp backend
+  const [scheduleInfo, setScheduleInfo] = useState(null);   // F-02: estado scheduler
+  const [showForm,     setShowForm]     = useState(false);
+  const [editId,       setEditId]       = useState(null);
+  const [manualPrices, setManualPrices] = useState({});
+  const [inputValues,  setInputValues]  = useState({});
   const [form, setForm] = useState({
     name:"", ticker:"", type:"crypto", platform:"Binance",
     quantity:"", buy_price:"", buy_date: new Date().toISOString().split("T")[0], notes:""
   });
 
-  // ── Fetch precios ──────────────────────────────────────────
+  // ── F-02: Cargar precios desde caché del backend ───────────
+  const loadCachedPrices = async () => {
+    try {
+      const data = await api.getCurrentPrices();
+      if (data?.prices) {
+        const flat = {};
+        Object.entries(data.prices).forEach(([ticker, info]) => {
+          flat[ticker.toUpperCase()] = info.price_usd;
+        });
+        setPrices(p => ({ ...p, ...flat }));
+      }
+      if (data?.exchange_rate) setExRate(data.exchange_rate);
+      if (data?.last_updated)  setLastUpdated(new Date(data.last_updated));
+    } catch(_) {}
+  };
+
+  // ── Fetch precios (usa caché backend F-02) ─────────────────
   const fetchPrices = async () => {
     setLoading(true);
-    const newPrices = {};
-
-    try {
-      const r = await fetch("https://open.er-api.com/v6/latest/USD");
-      const d = await r.json();
-      if (d.rates?.PEN) setExRate(d.rates.PEN);
-    } catch(_) {}
-
-    const cryptoTickers = investments
-      .filter(i=>i.type==="crypto")
-      .map(i=>i.ticker.toUpperCase())
-      .filter((t,idx,arr)=>arr.indexOf(t)===idx);
-
-    const geckoIds = cryptoTickers.map(t=>COINGECKO_IDS[t]).filter(Boolean);
-
-    if (geckoIds.length > 0) {
-      try {
-        const r = await fetch(
-          `https://api.coingecko.com/api/v3/simple/price?ids=${geckoIds.join(",")}&vs_currencies=usd`
-        );
-        const d = await r.json();
-        cryptoTickers.forEach(t=>{
-          const id = COINGECKO_IDS[t];
-          if (id && d[id]?.usd) newPrices[t] = d[id].usd;
-        });
-      } catch(_) {}
-    }
-
-    const stockTickers = investments
-      .filter(i=>i.type==="stock")
-      .map(i=>i.ticker.toUpperCase())
-      .filter((t,idx,arr)=>arr.indexOf(t)===idx);
-
-    for (const ticker of stockTickers) {
-      try {
-        const r = await fetch(
-          `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
-          { headers:{"Accept":"application/json"} }
-        );
-        const d = await r.json();
-        const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-        if (price) newPrices[ticker] = price;
-      } catch(_) {}
-    }
-
-    setPrices(p=>({...p, ...newPrices}));
+    await loadCachedPrices();
     setLoading(false);
   };
 
-  useEffect(()=>{ if(investments.length>0) fetchPrices(); },[investments.length]);
+  // ── F-02: Forzar actualización vía backend ─────────────────
+  const forceRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await api.refreshPrices();
+      await new Promise(r => setTimeout(r, 2500));
+      await loadCachedPrices();
+      const info = await api.getScheduleInfo();
+      setScheduleInfo(info);
+    } catch(e) {
+      console.error("Error al forzar actualización:", e);
+    }
+    setRefreshing(false);
+  };
+
+  // ── F-02: Estado del scheduler ─────────────────────────────
+  const loadScheduleInfo = async () => {
+    try {
+      const info = await api.getScheduleInfo();
+      setScheduleInfo(info);
+    } catch(_) {}
+  };
+
+  useEffect(() => {
+    if (investments.length > 0) {
+      fetchPrices();
+      loadScheduleInfo();
+    }
+  }, [investments.length]);
 
   // ── Cálculos del portafolio ────────────────────────────────
   const getPrice = (ticker) => {
@@ -130,13 +134,20 @@ export default function InversionesTab({ investments, snapshots, onAdd, onEdit, 
     "#f87171","#34d399","#fb923c","#60a5fa",
     "#e879f9","#94a3b8","#fbbf24","#2dd4bf",
   ];
+
+  // Mapa ticker → color único, compartido entre pie y bar
+  const tickerColorMap = {};
+  [...consolidatedByTicker]
+    .sort((a,b)=>(b.curValue??b.totalCost)-(a.curValue??a.totalCost))
+    .forEach((c,i) => { tickerColorMap[c.ticker] = TICKER_COLORS[i % TICKER_COLORS.length]; });
+
   const pieDataByTicker = consolidatedByTicker
     .filter(c=>(c.curValue??c.totalCost)>0)
     .sort((a,b)=>(b.curValue??b.totalCost)-(a.curValue??a.totalCost))
-    .map((c,i)=>({
+    .map((c)=>({  // ← sin índice, usa tickerColorMap
       name:c.ticker, fullName:c.name,
       value:parseFloat((c.curValue??c.totalCost).toFixed(2)),
-      color:TICKER_COLORS[i % TICKER_COLORS.length], type:c.type,
+      color:tickerColorMap[c.ticker], type:c.type,
     }));
 
   // ── Snapshot ───────────────────────────────────────────────
@@ -216,10 +227,29 @@ export default function InversionesTab({ investments, snapshots, onAdd, onEdit, 
         <p style={{color:"#888",fontSize:12,margin:0}}>
           Portafolio · TC: <b style={{color:"#f59e0b"}}>S/{exRate.toFixed(3)}</b> por USD
         </p>
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {/* F-02: indicador última actualización */}
+          {lastUpdated && (
+            <div style={{display:"flex",alignItems:"center",gap:4,background:"#0a0a0c",
+              border:"1px solid #1a1a20",borderRadius:6,padding:"4px 10px",fontSize:11}}>
+              <Clock size={10} style={{color:"#444"}}/>
+              <span style={{color:"#444"}}>
+                Actualizado: <span style={{color:"#555"}}>
+                  {lastUpdated.toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"})}
+                </span>
+              </span>
+            </div>
+          )}
+          {/* F-02: botón forzar actualización */}
+          <button onClick={forceRefresh} disabled={refreshing}
+            style={{...s.btn,background:"rgba(168,85,247,0.08)",color:"#a855f7",
+              border:"1px solid rgba(168,85,247,0.25)",display:"flex",alignItems:"center",gap:5,fontSize:12}}>
+            <Zap size={12} style={{animation:refreshing?"spin 1s linear infinite":undefined}}/>
+            {refreshing?"Actualizando APIs...":"Actualizar ahora"}
+          </button>
           <button onClick={fetchPrices} disabled={loading}
             style={{...s.btn,background:"#111113",border:"1px solid #2a2a30",color:"#888",display:"flex",alignItems:"center",gap:5,fontSize:12}}>
-            <RefreshCw size={12} style={{animation:loading?"spin 1s linear infinite":undefined}}/> {loading?"Actualizando...":"Actualizar precios"}
+            <RefreshCw size={12} style={{animation:loading?"spin 1s linear infinite":undefined}}/> {loading?"Cargando...":"Recargar caché"}
           </button>
           {investments.length>0&&(
             <button onClick={handleSnapshot}
@@ -233,6 +263,39 @@ export default function InversionesTab({ investments, snapshots, onAdd, onEdit, 
           </button>
         </div>
       </div>
+
+      {/* F-02: Panel estado scheduler */}
+      {scheduleInfo?.running && (
+        <div style={{background:"#050507",border:"1px solid #151518",borderRadius:8,
+          padding:"10px 14px",display:"flex",flexWrap:"wrap",gap:16,alignItems:"center"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <div style={{width:7,height:7,borderRadius:"50%",background:"#22c55e",
+              boxShadow:"0 0 6px #22c55e"}}/>
+            <span style={{color:"#22c55e",fontSize:11,fontWeight:600}}>Scheduler activo</span>
+          </div>
+          {(scheduleInfo.jobs || []).map(job => (
+            <div key={job.id} style={{display:"flex",alignItems:"center",gap:5,fontSize:10}}>
+              <span style={{color:"#333",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px"}}>
+                {{
+                  crypto_prices:"🪙 Crypto",
+                  stock_prices:"📈 Acciones",
+                  exchange_rate:"💱 TC",
+                  auto_snapshot:"📸 Snapshot",
+                }[job.id] || job.id}
+              </span>
+              <span style={{color:"#1a1a24"}}>·</span>
+              <span style={{color:"#2a2a38"}}>
+                {job.next_run
+                  ? new Date(job.next_run).toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"})
+                  : "—"}
+              </span>
+            </div>
+          ))}
+          <span style={{color:"#1a1a24",fontSize:10,marginLeft:"auto"}}>
+            crypto/4h · acciones/6h · TC/1h · snapshot/fin-mes
+          </span>
+        </div>
+      )}
 
       {/* Formulario */}
       {showForm&&(
@@ -503,7 +566,7 @@ export default function InversionesTab({ investments, snapshots, onAdd, onEdit, 
                     <YAxis type="category" dataKey="ticker" tick={{fill:"#888",fontSize:11}} width={50} axisLine={false} tickLine={false}/>
                     <Tooltip content={<TTipUSD/>}/>
                     <Bar dataKey="curValue" name="Valor USD" radius={[0,4,4,0]}>
-                      {topData.map((e,i)=><Cell key={i} fill={e.type==="crypto"?"#f59e0b":"#38bdf8"}/>)}
+                      {topData.map((e,i)=><Cell key={i} fill={tickerColorMap[e.ticker] ?? TICKER_COLORS[i]}/>)}
                     </Bar>
                   </BarChart>
                 );

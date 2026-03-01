@@ -164,6 +164,11 @@ export const api = {
       (data.assets || []).map(a => ({ ...a, id: a.asset_id }))
     ),
 
+  // F-02: Precios automáticos — caché del scheduler
+  getCurrentPrices:  () => request("GET",  "/investments/prices/current"),
+  refreshPrices:     () => request("POST", "/investments/prices/refresh"),
+  getScheduleInfo:   () => request("GET",  "/investments/prices/schedule"),
+
   // ═══════════════════════════════════════════════════════════════
   // Métodos genéricos — compatibilidad con componentes v3
   // Permiten llamadas estilo: api.get("/v3/...") y api.post("/v3/...", body)

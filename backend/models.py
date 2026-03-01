@@ -100,6 +100,20 @@ class PortfolioSnapshot(Base):
     detail      = Column(JSON, default=[])                         # [{ticker, qty, price_usd, value_usd}]
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
 
+class PriceCache(Base):
+    """
+    Cache de precios actualizados automáticamente por el scheduler.
+    Un registro por ticker. Se sobreescribe en cada actualización.
+    """
+    __tablename__ = "price_cache"
+
+    id         = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    ticker     = Column(String(20), nullable=False, unique=True, index=True)  # Ej. BTC, AAPL
+    price_usd  = Column(Float, nullable=False)                                 # Precio en USD
+    source     = Column(String(30), default="coingecko")                      # coingecko | yahoo
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=datetime.utcnow)
+
+
 # ============================================================
 # FinanzasVH v3.0 — models_v3.py
 # Nuevas entidades SQLAlchemy (no destructivas)

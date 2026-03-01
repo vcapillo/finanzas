@@ -5,3 +5,6 @@ pydantic==2.7.4
 python-multipart==0.0.9
 google-genai
 httpx
+apscheduler==3.10.4
+yfinance==0.2.37
+requests==2.31.0
