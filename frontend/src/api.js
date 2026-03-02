@@ -195,6 +195,21 @@ export const api = {
   listarResumenes: () =>
     request("GET", "/v3/resumen/"),
 
+  // ─── F-04: Metas Financieras ─────────────────────────────────────────────────
+  getMetas:            (includeAchieved = false) => request("GET", `/v3/metas/${includeAchieved ? "?include_achieved=true" : ""}`),
+  getMeta:             (id)              => request("GET",    `/v3/metas/${id}`),
+  createMeta:          (data)            => request("POST",   "/v3/metas/", data),
+  updateMeta:          (id, data)        => request("PUT",    `/v3/metas/${id}`, data),
+  deleteMeta:          (id)              => request("DELETE", `/v3/metas/${id}`),
+  archivarMeta:        (id)              => request("PATCH",  `/v3/metas/${id}/archivar`),
+  addAbono:            (goalId, data)    => request("POST",   `/v3/metas/${goalId}/abonos`, data),
+  deleteAbono:         (goalId, abonoId) => request("DELETE", `/v3/metas/${goalId}/abonos/${abonoId}`),
+
+  // ─── F-05: Flujo de Caja Proyectado ──────────────────────────────────────────
+  // GET /v3/flujo-caja/{period}?saldo_inicial=XXXX
+  getFlujoCaja: (period, saldoInicial = 0) =>
+    request("GET", `/v3/flujo-caja/${period}?saldo_inicial=${saldoInicial}`),
+
   // ─── F-08: Reportes PDF ─────────────────────────────────────────────────────
   // GET /v3/reportes/resumen/{period} — descarga PDF del resumen mensual
   // Retorna un Blob para descarga directa en el navegador

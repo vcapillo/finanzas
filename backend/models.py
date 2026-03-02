@@ -269,6 +269,52 @@ class ResumenMensual(Base):
     generado_en    = Column(DateTime, default=datetime.utcnow)
 
 
+# ── F-04: METAS FINANCIERAS ─────────────────────────────────
+
+class FinancialGoal(Base):
+    """
+    F-04: Metas financieras independientes.
+    No vinculadas a Asset — representan objetivos autónomos
+    (ej: 'Fondo emergencia S/ 10,000 para Jun 2026').
+    """
+    __tablename__ = "financial_goals"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    name           = Column(String(200), nullable=False)     # "Fondo de emergencia"
+    description    = Column(Text, nullable=True)
+    target_amount  = Column(Float, nullable=False)           # S/ 10,000
+    current_amount = Column(Float, default=0.0)              # Progreso acumulado
+    deadline       = Column(String(10), nullable=True)       # YYYY-MM-DD
+    account        = Column(String(100), nullable=True)      # "Financiera Efectiva"
+    currency       = Column(String(3), default="PEN")
+    icon           = Column(String(10), default="🎯")
+    color          = Column(String(20), default="#22c55e")
+    is_active      = Column(Boolean, default=True)
+    is_achieved    = Column(Boolean, default=False)
+    created_at     = Column(DateTime, default=datetime.utcnow)
+    updated_at     = Column(DateTime, onupdate=datetime.utcnow)
+
+    abonos = relationship("GoalContribution", back_populates="goal",
+                          cascade="all, delete-orphan")
+
+
+class GoalContribution(Base):
+    """
+    Registro de abonos a una meta financiera.
+    Permite ver el historial de aportes realizados.
+    """
+    __tablename__ = "goal_contributions"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    goal_id    = Column(Integer, ForeignKey("financial_goals.id"), nullable=False)
+    amount     = Column(Float, nullable=False)
+    date       = Column(String(10), nullable=False)          # YYYY-MM-DD
+    note       = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    goal = relationship("FinancialGoal", back_populates="abonos")
+
+
 class AppTelegramConfig(Base):
     """
     Configuración del bot de notificaciones Telegram.

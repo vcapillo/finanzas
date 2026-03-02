@@ -11,7 +11,7 @@ import {
 import {
   LayoutDashboard, List, Upload, Target, Calendar, Settings,
   Plus, X, Trash2, Bell, Download, TrendingUp, DollarSign,
-  Search, Info, HelpCircle,
+  Search, Info, HelpCircle, Flag,
 } from "lucide-react";
 
 // ── Módulos internos ──────────────────────────────────────────
@@ -37,6 +37,12 @@ import AlertasPanel           from "./components/alertas/AlertasPanel";
 // ── F-03: Resumen Mensual con IA ─────────────────
 import ResumenMensualPanel    from "./components/resumen/ResumenMensualPanel";
 
+// ── F-04: Metas Financieras ───────────────────────
+import MetasFinancieras       from "./components/metas/MetasFinancieras";
+
+// ── F-05: Flujo de Caja Proyectado ──────────────────
+import FlujoCajaProyectado    from "./components/flujo/FlujoCajaProyectado";
+
 // ─────────────────────────────────────────────────────────────
 const TABS = [
   { id:"dashboard",   icon:<LayoutDashboard size={15}/>, label:"Dashboard"       },
@@ -46,6 +52,8 @@ const TABS = [
   { id:"calendario",  icon:<Calendar size={15}/>,        label:"Calendario"       },
   { id:"inversiones", icon:<TrendingUp size={15}/>,      label:"Inversiones"      },
   { id:"patrimonio",  icon:<DollarSign size={15}/>,      label:"Patrimonio",      badge:"v3"  },
+  { id:"metas",       icon:<Flag size={15}/>,             label:"Metas",           badge:"F-04" },
+  { id:"flujo",       icon:<Download size={15}/>,         label:"Flujo de Caja",   badge:"F-05" },
 ];
 
 const PERIOD_LABEL = (p) => p
@@ -682,6 +690,19 @@ export default function App({ onLogout }) {
 
         {/* ══ PATRIMONIO ══════════════════════════════════════ */}
         {tab==="patrimonio"&&<PatrimonioConsolidado/>}
+
+        {/* ══ METAS FINANCIERAS (F-04) ═══════════ */}
+        {tab==="metas"&&(
+          <MetasFinancieras
+            accounts={activeAccounts}
+            income={profile?.income||0}
+          />
+        )}
+
+        {/* ══ FLUJO DE CAJA PROYECTADO (F-05) ═════════ */}
+        {tab==="flujo"&&(
+          <FlujoCajaProyectado period={period} />
+        )}
 
       </div>
     </div>
