@@ -29,6 +29,11 @@ from database import SessionLocal
 
 logger = logging.getLogger("price_service")
 
+# yfinance genera warnings internos cuando falla desde Docker (cuerpo vacío de Yahoo).
+# Las capas 3 y 4 manejan el fallback correctamente — se silencia el ruido de yfinance.
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+logging.getLogger("peewee").setLevel(logging.CRITICAL)
+
 # ─── Mapa ticker → CoinGecko id (se puede ampliar desde aquí) ─
 COINGECKO_IDS: dict[str, str] = {
     "BTC":  "bitcoin",
@@ -240,13 +245,42 @@ def _fetch_stock_price_http(ticker: str) -> Optional[float]:
     return None
 
 
+def _fetch_stock_price_stooq(ticker: str) -> Optional[float]:
+    """
+    Fallback usando Stooq (stooq.com) — no requiere auth, soporta ETFs/acciones US.
+    Formato URL: https://stooq.com/q/l/?s=SCHD.US&f=sd2t2ohlcv&h&e=csv
+    Respuesta CSV: Symbol,Date,Time,Open,High,Low,Close,Volume
+    """
+    try:
+        url = f"https://stooq.com/q/l/?s={ticker.lower()}.us&f=sd2t2ohlcv&h&e=csv"
+        resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        if resp.status_code != 200:
+            logger.debug(f"[Stooq] {ticker} retornó HTTP {resp.status_code}")
+            return None
+        lines = resp.text.strip().splitlines()
+        if len(lines) < 2:
+            logger.debug(f"[Stooq] {ticker} sin datos en CSV")
+            return None
+        # Fila de datos: Symbol,Date,Time,Open,High,Low,Close,Volume
+        parts = lines[1].split(",")
+        if len(parts) >= 7 and parts[6] not in ("", "N/D"):
+            price = float(parts[6])  # columna Close
+            if price > 0:
+                logger.info(f"[Stooq] {ticker} = ${price:.4f}")
+                return price
+    except Exception as e:
+        logger.debug(f"[Stooq] {ticker} falló: {e}")
+    return None
+
+
 def job_update_stock_prices() -> None:
     """
     Actualiza precios de acciones y ETFs desde Yahoo Finance cada 6 horas.
-    Estrategia en 3 capas para máxima robustez:
+    Estrategia en 4 capas para máxima robustez:
       1. yfinance fast_info (atributo, no .get())
       2. yfinance history(period='5d')
       3. HTTP directo a Yahoo Finance (resistente a bloqueos Docker)
+      4. Stooq CSV (fallback sin auth — ideal para ETFs como SCHD, VT)
     """
     db = SessionLocal()
     try:
@@ -286,14 +320,21 @@ def job_update_stock_prices() -> None:
                     if price:
                         method = "http_directo"
 
+                # Capa 4: Stooq CSV (mejor fallback para ETFs desde Docker)
+                if not price or price <= 0:
+                    price = _fetch_stock_price_stooq(ticker)
+                    if price:
+                        method = "stooq"
+
                 # Guardar resultado
                 if price and price > 0:
-                    _upsert_price(db, ticker, float(price), f"yahoo_{method}")
+                    source_tag = "stooq" if method == "stooq" else f"yahoo_{method}"
+                    _upsert_price(db, ticker, float(price), source_tag)
                     updated += 1
                     logger.info(f"[Stocks] {ticker} = ${price:.4f} (via {method})")
                 else:
                     logger.warning(
-                        f"[Stocks] {ticker}: sin precio tras 3 intentos — "
+                        f"[Stocks] {ticker}: sin precio tras 4 intentos — "
                         "posible bloqueo de red o ticker inválido"
                     )
 

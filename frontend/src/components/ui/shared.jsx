@@ -18,7 +18,21 @@ export const s = {
 export const Chip = ({ type }) => {
   const c = TYPE_CONFIG[type];
   return (
-    <span style={{ background: c.bg, color: c.color, border: `1px solid ${c.border}`, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+    <span style={{
+      background: c.bg,
+      color: c.color,
+      border: `1px solid ${c.border}`,
+      borderRadius: 6,
+      padding: "2px 6px",
+      fontSize: 10,
+      fontWeight: 700,
+      whiteSpace: "normal",
+      wordBreak: "break-word",
+      lineHeight: 1.3,
+      display: "inline-block",
+      maxWidth: "100%",
+      textAlign: "center",
+    }}>
       {c.label}
     </span>
   );

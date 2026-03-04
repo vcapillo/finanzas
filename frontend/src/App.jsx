@@ -43,6 +43,12 @@ import MetasFinancieras       from "./components/metas/MetasFinancieras";
 // ── F-05: Flujo de Caja Proyectado ──────────────────
 import FlujoCajaProyectado    from "./components/flujo/FlujoCajaProyectado";
 
+// ── G-01: Treemap de gastos ───────────────────────
+import GastoTreemap           from "./components/dashboard/GastoTreemap";
+
+// ── G-05: Heatmap semanal ──────────────────────────
+import HeatmapSemanal         from "./components/dashboard/HeatmapSemanal";
+
 // ─────────────────────────────────────────────────────────────
 const TABS = [
   { id:"dashboard",   icon:<LayoutDashboard size={15}/>, label:"Dashboard"       },
@@ -414,6 +420,15 @@ export default function App({ onLogout }) {
                 </ResponsiveContainer>
               </div>
             </div>
+
+            {/* G-01 — Treemap de gastos */}
+            {catData.length > 0 && (
+              <div style={s.card}>
+                <p style={{color:"#555",fontSize:11,fontWeight:600,margin:"0 0 14px",letterSpacing:"0.5px"}}>MAPA DE GASTOS · {PERIOD_LABEL(period)}</p>
+                <GastoTreemap catData={catData} />
+              </div>
+            )}
+
             {/* Evolución mensual */}
             {trendData.length>=2&&(
               <div style={s.card}>
@@ -435,6 +450,7 @@ export default function App({ onLogout }) {
                 </ResponsiveContainer>
               </div>
             )}
+
             {/* Comparativo */}
             {(()=>{
               const curIdx=trendData.findIndex(d=>d.period===period);
@@ -477,16 +493,16 @@ export default function App({ onLogout }) {
                 </div>
               );
             })()}
+
             {/* F-03 — Resumen Mensual con IA */}
             <ResumenMensualPanel period={period} />
 
             {/* Recomendaciones */}
             {(()=>{
-              // Derivar nombres de cuentas de ahorro e inversión desde settings
-              const cuentasAhorro     = (settings?.accounts||[]).filter(a=>a.active&&["ahorro","saving"].includes((a.type||a.tipo||a.kind||"").toLowerCase())).map(a=>a.name);
-              const cuentasInversion  = (settings?.accounts||[]).filter(a=>a.active&&["inversión","inversion","investment","cripto","crypto","broker"].some(t=>(a.type||a.tipo||a.kind||"").toLowerCase().includes(t))).map(a=>a.name);
-              const destAhorro   = cuentasAhorro.length>0   ? cuentasAhorro.join(" o ")   : "tu cuenta de ahorro";
-              const destInversion= cuentasInversion.length>0? cuentasInversion.join(" o ") : "tus inversiones";
+              const cuentasAhorro    = (settings?.accounts||[]).filter(a=>a.active&&["ahorro","saving"].includes((a.type||a.tipo||a.kind||"").toLowerCase())).map(a=>a.name);
+              const cuentasInversion = (settings?.accounts||[]).filter(a=>a.active&&["inversión","inversion","investment","cripto","crypto","broker"].some(t=>(a.type||a.tipo||a.kind||"").toLowerCase().includes(t))).map(a=>a.name);
+              const destAhorro    = cuentasAhorro.length>0    ? cuentasAhorro.join(" o ")    : "tu cuenta de ahorro";
+              const destInversion = cuentasInversion.length>0 ? cuentasInversion.join(" o ") : "tus inversiones";
               return (
                 <div style={s.card}>
                   <p style={{color:"#555",fontSize:11,fontWeight:600,margin:"0 0 12px",letterSpacing:"0.5px"}}>RECOMENDACIONES</p>
@@ -505,7 +521,7 @@ export default function App({ onLogout }) {
         {tab==="movimientos"&&(
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <div style={{display:"flex",gap:4,borderBottom:"1px solid #1a1a20",marginBottom:2}}>
-              {[{id:"lista",label:"📋 Lista de movimientos"},{id:"transferencias",label:"🔁 Transferencias internas"}].map(st=>(
+              {[{id:"lista",label:"📋 Lista de movimientos"},{id:"transferencias",label:"🔁 Transferencias internas"},{id:"heatmap",label:"🔥 Heatmap"}].map(st=>(
                 <button key={st.id} onClick={()=>setMovTab(st.id)}
                   style={{background:"transparent",border:"none",cursor:"pointer",padding:"8px 14px",fontSize:12,fontWeight:movTab===st.id?700:400,
                     color:movTab===st.id?"#22c55e":"#555",borderBottom:movTab===st.id?"2px solid #22c55e":"2px solid transparent"}}>
@@ -514,6 +530,7 @@ export default function App({ onLogout }) {
               ))}
             </div>
             {movTab==="transferencias"&&<TransferenciasPanel currentPeriod={period} onTransferCreated={async()=>{const f=await api.getTransactions(period);setTransactions(f);}}/>}
+            {movTab==="heatmap"&&<HeatmapSemanal transactions={transactions} period={period}/>}
             {movTab==="lista"&&<>
               {showForm&&(
                 <div style={{...s.card,border:"1px solid rgba(34,197,94,0.3)"}}>
