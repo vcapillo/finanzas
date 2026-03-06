@@ -1,5 +1,5 @@
 """
-FinanzasVH — API Backend
+FinanzasOS — API Backend
 FastAPI + SQLAlchemy + SQLite
 """
 import os
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="FinanzasVH API",
+    title="FinanzasOS API",
     description="Sistema de gestión financiera personal",
     version="3.1.0",
     lifespan=lifespan,
@@ -140,7 +140,7 @@ class BulkBudget(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "app": "FinanzasVH", "version": "3.0.0"}
+    return {"status": "ok", "app": "FinanzasOS", "version": "3.0.0"}
 
 
 # ═══════════════════════════════════════════════════════════════

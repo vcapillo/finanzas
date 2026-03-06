@@ -1,5 +1,5 @@
 """
-FinanzasVH — services/resumen_service.py
+FinanzasOS — services/resumen_service.py
 F-03: Resumen Mensual de Salud Financiera con IA
 
 Genera un diagnóstico narrativo completo del período usando Gemini.
@@ -457,7 +457,7 @@ def job_generar_resumen_fin_de_mes() -> None:
                         resultado.get("semaforo", "amarillo"), "🟡"
                     )
                     msg = (
-                        f"📊 <b>Resumen Mensual FinanzasVH — {period}</b>\n\n"
+                        f"📊 <b>Resumen Mensual FinanzasOS — {period}</b>\n\n"
                         f"{semaforo_emoji} <b>Salud financiera:</b> {resultado.get('resumen_ejecutivo', '')}\n\n"
                         f"💡 {resultado.get('recomendaciones', [''])[0]}\n\n"
                         f"👉 <a href='https://finanzas.alias.nom.pe/'>Ver resumen completo</a>"

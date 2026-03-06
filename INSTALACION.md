@@ -1,4 +1,4 @@
-# 🚀 Guía de Instalación — FinanzasVH v2.0
+# 🚀 Guía de Instalación — FinanzasOS v2.0
 **Instalación desde cero en servidor con Docker**
 Sin datos de prueba — base de datos vacía lista para tu uso real.
 
@@ -163,7 +163,7 @@ docker compose ps
 curl http://localhost:8000/health
 
 # Respuesta esperada:
-# {"status":"ok","app":"FinanzasVH","version":"2.0.0"}
+# {"status":"ok","app":"FinanzasOS","version":"2.0.0"}
 ```
 
 ---

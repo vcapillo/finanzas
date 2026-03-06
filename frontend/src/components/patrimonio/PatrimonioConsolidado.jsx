@@ -1,5 +1,5 @@
 /**
- * FinanzasVH v3.0 — PatrimonioConsolidado.jsx
+ * FinanzasOS v3.0 — PatrimonioConsolidado.jsx
  * Estilo 100% coherente con App.jsx (mismo sistema inline s.*)
  */
 import { useEffect, useState } from "react";

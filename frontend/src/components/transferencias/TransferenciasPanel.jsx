@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// FinanzasVH v3.1 — TransferenciasPanel.jsx
+// FinanzasOS v3.1 — TransferenciasPanel.jsx
 // OBS-02: Registro de transferencias internas entre cuentas
 //         con movimiento espejo automático (excluido del análisis)
 // ═══════════════════════════════════════════════════════════════

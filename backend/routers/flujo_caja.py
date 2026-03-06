@@ -1,5 +1,5 @@
 """
-FinanzasVH v3.1 — routers/flujo_caja.py
+FinanzasOS v3.1 — routers/flujo_caja.py
 F-05: Análisis de Flujo de Caja Proyectado
 Proyecta el saldo disponible semana a semana dentro de un mes,
 combinando transacciones reales (pasado) con estimaciones (futuro).

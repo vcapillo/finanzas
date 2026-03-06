@@ -115,7 +115,7 @@ class PriceCache(Base):
 
 
 # ============================================================
-# FinanzasVH v3.0 — models_v3.py
+# FinanzasOS v3.0 — models_v3.py
 # Nuevas entidades SQLAlchemy (no destructivas)
 # Ejecutar: alembic revision --autogenerate -m "v3_patrimonio"
 #            alembic upgrade head

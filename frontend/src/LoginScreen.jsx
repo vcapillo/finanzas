@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — LoginScreen.jsx
+ * FinanzasOS — LoginScreen.jsx
  * Login con credenciales en duro · Estilo dark theme consistente con App.jsx
  */
 import { useState, useEffect, useRef } from "react";
@@ -218,7 +218,7 @@ export default function LoginScreen({ onLogin }) {
             💼
           </div>
           <div style={{ color: "#f0f0f2", fontWeight: 700, fontSize: 18, letterSpacing: "-0.3px" }}>
-            FinanzasVH{" "}
+            FinanzasOS{" "}
             <span
               style={{
                 background: "rgba(34,197,94,0.15)",

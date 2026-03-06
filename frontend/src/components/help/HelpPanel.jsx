@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — HelpPanel.jsx (OBS-03)
+ * FinanzasOS — HelpPanel.jsx (OBS-03)
  * Panel lateral de ayuda e documentación integrada.
  * Se abre desde el botón "?" en la barra de navegación superior.
  */
@@ -123,7 +123,7 @@ export default function HelpPanel({ onClose }) {
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <HelpCircle size={16} color="#22c55e"/>
             <span style={{color:"#f0f0f2",fontWeight:700,fontSize:14}}>Centro de Ayuda</span>
-            <span style={{fontSize:10,color:"#333",background:"#1a1a22",padding:"2px 6px",borderRadius:4}}>FinanzasVH v3.0</span>
+            <span style={{fontSize:10,color:"#333",background:"#1a1a22",padding:"2px 6px",borderRadius:4}}>FinanzasOS v3.0</span>
           </div>
           <button onClick={onClose} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:2,display:"flex"}}>
             <X size={16}/>
@@ -252,7 +252,7 @@ export default function HelpPanel({ onClose }) {
         {/* Footer */}
         <div style={{padding:"10px 20px",borderTop:"1px solid #111118",flexShrink:0,background:"#0c0c0f"}}>
           <p style={{...s.p,fontSize:10,textAlign:"center",color:"#2a2a32",margin:0}}>
-            FinanzasVH v3.0 · Victor Hugo Capillo · 2026
+            FinanzasOS v3.0 · Victor Hugo Capillo · 2026
           </p>
         </div>
 

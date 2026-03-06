@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — utils/parsers.js
+ * FinanzasOS — utils/parsers.js
  * Parsers de extractos bancarios: texto plano y CSV.
  */
 import { autoClassify } from "./classify.js";

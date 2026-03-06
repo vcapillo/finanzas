@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — G-04: Gauge / Velocímetro de Tasa de Ahorro
+ * FinanzasOS — G-04: Gauge / Velocímetro de Tasa de Ahorro
  * SVG autocontenido (sin overflow), layout horizontal.
  * Semáforo: 🟢 ≥20% | 🟡 10-20% | 🔴 <10%
  */

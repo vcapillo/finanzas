@@ -1,5 +1,5 @@
 # ============================================================
-# FinanzasVH v3.0 — services/duplicate_service.py
+# FinanzasOS v3.0 — services/duplicate_service.py
 # Separa transacciones limpias de candidatas a duplicado
 # ============================================================
 

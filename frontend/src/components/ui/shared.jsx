@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — components/ui/shared.jsx
+ * FinanzasOS — components/ui/shared.jsx
  * Estilos base, Chip de tipo, tarjeta Metric y Tooltips de gráficos.
  */
 import { TYPE_CONFIG } from "../../constants/types.js";

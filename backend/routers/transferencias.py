@@ -1,5 +1,5 @@
 # ============================================================
-# FinanzasVH v3.1 — routers/transferencias.py
+# FinanzasOS v3.1 — routers/transferencias.py
 # Endpoints REST para InternalTransfer
 # Registra movimientos entre cuentas propias sin doble conteo
 # ============================================================

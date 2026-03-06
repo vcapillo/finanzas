@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — components/settings/SettingsPanel.jsx
+ * FinanzasOS — components/settings/SettingsPanel.jsx
  * Panel lateral de configuración: Perfil, Cuentas, Reglas, Ciclos, Categorías.
  */
 import { useState, useEffect } from "react";

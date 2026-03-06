@@ -1,5 +1,5 @@
 /**
- * FinanzasVH v3.1 — FlujoCajaProyectado.jsx
+ * FinanzasOS v3.1 — FlujoCajaProyectado.jsx
  * F-05: Análisis de Flujo de Caja Proyectado
  * Estilo coherente con el tema oscuro del sistema.
  */

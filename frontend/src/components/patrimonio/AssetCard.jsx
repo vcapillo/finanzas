@@ -1,5 +1,5 @@
 /**
- * FinanzasVH v3.0 — AssetCard.jsx
+ * FinanzasOS v3.0 — AssetCard.jsx
  * Estilo coherente con App.jsx (mismo sistema inline s.*)
  */
 import { useState } from "react";

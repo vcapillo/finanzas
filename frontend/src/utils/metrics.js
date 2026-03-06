@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — utils/metrics.js
+ * FinanzasOS — utils/metrics.js
  * Cálculo de indicadores de salud financiera.
  */
 

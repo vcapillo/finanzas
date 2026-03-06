@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — constants/types.js
+ * FinanzasOS — constants/types.js
  * Tipos de movimiento, cuentas y categorías por defecto.
  */
 

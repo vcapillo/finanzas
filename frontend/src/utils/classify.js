@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — utils/classify.js
+ * FinanzasOS — utils/classify.js
  * Clasificación automática de transacciones por reglas.
  */
 import { SYSTEM_RULES } from "../constants/rules.js";

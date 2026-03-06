@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — components/inversiones/InversionesTab.jsx
+ * FinanzasOS — components/inversiones/InversionesTab.jsx
  * Portafolio de inversiones: crypto + acciones con precios en tiempo real.
  * F-02: Precios actualizados automáticamente por scheduler backend (APScheduler).
  */

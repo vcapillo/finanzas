@@ -1,5 +1,5 @@
 """
-FinanzasVH — utils/timezone_utils.py
+FinanzasOS — utils/timezone_utils.py
 Helper centralizado de zona horaria: America/Lima (UTC-5)
 
 Uso:

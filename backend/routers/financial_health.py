@@ -42,7 +42,7 @@ def get_financial_health(
     """
     Calcula los 6 indicadores del Radar de Salud Financiera (G-08).
 
-    Dimensiones (según manual FinanzasVH):
+    Dimensiones (según manual FinanzasOS):
       1. 💰 Tasa de Ahorro       — % ingreso ahorrado          (meta ≥ 20%)
       2. 💳 Control de Deuda     — ratio deuda/ingreso          (meta < 30%)
       3. 📈 Inversión Activa     — % ingreso en inversiones     (meta ≥ 10%)

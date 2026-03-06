@@ -1,5 +1,5 @@
 /**
- * FinanzasVH v3.0 — NetWorthChart.jsx
+ * FinanzasOS v3.0 — NetWorthChart.jsx
  * Estilo coherente con App.jsx — mismo tooltip TTip y colores
  */
 import { useEffect, useState } from "react";
