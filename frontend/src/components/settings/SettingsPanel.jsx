@@ -5,7 +5,7 @@
 import { useState, useEffect } from "react";
 import { X, Plus, Trash2, Settings } from "lucide-react";
 import { TYPE_CONFIG, ACCOUNT_TYPES, DEFAULT_CATEGORIES } from "../../constants/types.js";
-import { SYSTEM_RULES } from "../../constants/rules.js";
+// SYSTEM_RULES eliminado — clasificación 100% personalizada
 import { compilePattern } from "../../utils/classify.js";
 import { fmtN } from "../../utils/format.js";
 import { s } from "../ui/shared.jsx";
@@ -337,16 +337,7 @@ export function SettingsPanel({ settings, profile: initialProfile, onSave, onSav
           {/* ─── REGLAS ── */}
           {section==="rules"&&(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              <div style={{...s.card,background:"rgba(56,189,248,0.04)",border:"1px solid rgba(56,189,248,0.15)",marginBottom:4}}>
-                <p style={{color:"#38bdf8",fontSize:11,fontWeight:700,margin:"0 0 6px",letterSpacing:"0.5px"}}>📋 REGLAS DEL SISTEMA ({SYSTEM_RULES.length}) — Solo lectura</p>
-                <p style={{color:"#555",fontSize:11,margin:0}}>Se aplican automáticamente. Tus reglas personales tienen prioridad.</p>
-                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:10}}>
-                  {SYSTEM_RULES.map((r,i)=>(
-                    <span key={i} style={{background:"#0a0a0c",border:"1px solid #1a1a20",borderRadius:4,padding:"2px 7px",fontSize:10,color:"#666"}}>{r.label}</span>
-                  ))}
-                </div>
-              </div>
-              <p style={{color:"#555",fontSize:11,margin:"4px 0 8px"}}>Tus reglas — Se evalúan antes que las del sistema.</p>
+              <p style={{color:"#555",fontSize:11,margin:"4px 0 8px"}}>Todas las reglas son personalizadas. Se evalúan en orden de prioridad (primera = mayor prioridad).</p>
               {cfg.custom_rules.length===0&&(
                 <div style={{...s.card,textAlign:"center",color:"#444",padding:24}}>
                   No tienes reglas personalizadas aún.<br/>

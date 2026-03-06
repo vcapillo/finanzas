@@ -124,6 +124,14 @@ export const api = {
   saveAssetSnapshot: (assetId, balance, source = "MANUAL") =>
     request("POST", `/v3/patrimonio/snapshot?asset_id=${assetId}&balance=${balance}&source=${source}`),
 
+  // GET /v3/patrimonio/snapshots/{asset_id} — historial de snapshots de un activo
+  getAssetSnapshots: (assetId) =>
+    request("GET", `/v3/patrimonio/snapshots/${assetId}`),
+
+  // DELETE /v3/patrimonio/snapshots/{snapshot_id} — eliminar snapshot
+  deleteAssetSnapshot: (snapshotId) =>
+    request("DELETE", `/v3/patrimonio/snapshots/${snapshotId}`),
+
   // ─── v3.0: Ingesta IA ────────────────────────────────────────
 
   // POST /v3/ingesta/extracto  { asset_id, period, raw_text }
@@ -219,6 +227,18 @@ export const api = {
   // Retorna un Blob para descarga directa en el navegador
   descargarResumenPDF: async (period) => {
     const res = await fetch(`${BASE}/v3/reportes/resumen/${period}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return res.blob();
+  },
+
+  // GET /v3/reportes/estado-cuenta/{period}?account=XXXX
+  // Retorna un Blob para descarga directa. account es opcional.
+  descargarEstadoCuentaPDF: async (period, account = null) => {
+    const params = account ? `?account=${encodeURIComponent(account)}` : "";
+    const res = await fetch(`${BASE}/v3/reportes/estado-cuenta/${period}${params}`);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail || `HTTP ${res.status}`);

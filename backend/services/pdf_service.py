@@ -48,6 +48,15 @@ from reportlab.platypus import (
 
 logger = logging.getLogger("pdf_service")
 
+# Tipos de transacción con sus etiquetas
+TYPE_LABELS = {
+    "ingreso":        "💰 Ingresos",
+    "gasto_fijo":     "🏠 Gastos Fijos",
+    "gasto_variable": "🛒 Gastos Variables",
+    "deuda":          "💳 Deudas / Cuotas",
+    "ahorro":         "🏦 Ahorros / Inversiones",
+}
+
 # ─── Paleta FinanzasOS ────────────────────────────────────────
 C_BRAND     = colors.HexColor("#a78bfa")
 C_BRAND2    = colors.HexColor("#38bdf8")
@@ -844,4 +853,408 @@ def generar_pdf_resumen(period: str, contenido: dict,
         return buf.getvalue()
     except Exception as e:
         logger.error(f"[PDF] Error generando PDF: {e}", exc_info=True)
+        raise
+
+
+# ═══════════════════════════════════════════════════════════════
+# F-08 (2/3): ESTADO DE CUENTA MENSUAL
+# Listado detallado de movimientos con subtotales y resumen por cuenta
+# ═══════════════════════════════════════════════════════════════
+
+def generar_pdf_estado_cuenta(
+    period: str,
+    transactions: list,
+    profile: dict | None = None,
+    account_filter: str | None = None,
+) -> bytes:
+    """
+    Genera el Estado de Cuenta mensual en PDF.
+
+    Args:
+        period:         Período 'YYYY-MM'
+        transactions:   Lista de dicts con los movimientos del período
+        profile:        Dict con datos del perfil (name, income, etc.)
+        account_filter: Si se filtra por cuenta específica, su nombre
+
+    Returns:
+        bytes del PDF generado
+    """
+    buf          = io.BytesIO()
+    st           = _build_styles()
+    period_label = _period_label(period)
+
+    try:
+        from utils.timezone_utils import now_lima
+        generated_at = now_lima().strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        generated_at = datetime.utcnow().strftime("%d/%m/%Y %H:%M")
+
+    subtitle = f"Estado de Cuenta · {period_label}"
+    if account_filter:
+        subtitle += f" · {account_filter}"
+
+    doc = _DocWithHeaderFooter(
+        buf,
+        period_label = subtitle,
+        generated_at = generated_at,
+        pagesize     = A4,
+        leftMargin   = 1.8 * cm,
+        rightMargin  = 1.8 * cm,
+        topMargin    = 3.2 * cm,
+        bottomMargin = 1.8 * cm,
+        title        = f"FinanzasOS — Estado de Cuenta {period_label}",
+        author       = "Victor Hugo Capillo",
+    )
+
+    story = []
+
+    def sp(h_mm=4):
+        story.append(Spacer(1, h_mm * mm))
+
+    def hr(color=C_LINE, thickness=0.5):
+        story.append(HRFlowable(width="100%", thickness=thickness,
+                                color=color, spaceAfter=3 * mm))
+
+    def section_title(text: str, color=C_BRAND):
+        sp(5)
+        story.append(Paragraph(text.upper(), st["section"]))
+        story.append(HRFlowable(width="100%", thickness=0.4,
+                                color=C_LINE, spaceBefore=1 * mm, spaceAfter=3 * mm))
+
+    # Separar movimientos normales e internos
+    normales    = [t for t in transactions if not t.get("excluir_del_analisis", False)]
+    internos    = [t for t in transactions if t.get("excluir_del_analisis", False)]
+
+    # ── 1. ENCABEZADO / PERFIL ────────────────────────────────
+    sp(2)
+
+    nombre  = (profile or {}).get("name", "Victor Hugo Capillo")
+    ingreso = float((profile or {}).get("income", 0) or 0)
+
+    story.append(Paragraph(
+        f"Estado de Cuenta · {period_label}",
+        ParagraphStyle("ec_title", fontName="Helvetica-Bold",
+                       fontSize=18, textColor=C_TEXT, leading=22),
+    ))
+    sp(2)
+
+    if account_filter:
+        story.append(Paragraph(
+            f"Cuenta: {account_filter}",
+            ParagraphStyle("ec_acc", fontName="Helvetica-Bold",
+                           fontSize=12, textColor=C_BRAND, leading=16),
+        ))
+        sp(2)
+
+    # Tabla de datos del titular
+    perfil_data = [
+        [Paragraph("TITULAR",  st["kpi_label"]), Paragraph("INGRESO MENSUAL", st["kpi_label"]),
+         Paragraph("PERÍODO",   st["kpi_label"]), Paragraph("MOVIMIENTOS",     st["kpi_label"])],
+        [Paragraph(nombre, ParagraphStyle("pv", fontName="Helvetica-Bold", fontSize=11, textColor=C_TEXT, leading=14, alignment=TA_CENTER)),
+         Paragraph(_fmt_pen(ingreso) if ingreso else "—",
+                   ParagraphStyle("pv", fontName="Helvetica-Bold", fontSize=11, textColor=C_BRAND2, leading=14, alignment=TA_CENTER)),
+         Paragraph(period_label, ParagraphStyle("pv", fontName="Helvetica-Bold", fontSize=11, textColor=C_TEXT, leading=14, alignment=TA_CENTER)),
+         Paragraph(str(len(normales)), ParagraphStyle("pv", fontName="Helvetica-Bold", fontSize=11, textColor=C_TEXT, leading=14, alignment=TA_CENTER))],
+    ]
+    cw = (W_DRAW - 3 * mm) / 4
+    p_tbl = Table(perfil_data, colWidths=[cw] * 4)
+    p_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  C_CARD_BG),
+        ("BACKGROUND",    (0, 1), (-1, 1),  colors.white),
+        ("BOX",           (0, 0), (-1, -1), 0.5, C_LINE),
+        ("INNERGRID",     (0, 0), (-1, -1), 0.3, C_LINE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(p_tbl)
+    sp(4)
+    hr(C_BRAND, 1)
+
+    # ── 2. RESUMEN POR TIPO ───────────────────────────────────
+    section_title("Resumen por Tipo de Movimiento")
+
+    totales_tipo = {}
+    for t in normales:
+        tp  = t.get("type", "gasto_variable")
+        amt = abs(float(t.get("amount", 0)))
+        totales_tipo[tp] = totales_tipo.get(tp, 0) + amt
+
+    total_ingresos = totales_tipo.get("ingreso", 0)
+    total_egresos  = sum(v for k, v in totales_tipo.items() if k != "ingreso")
+    saldo_neto     = total_ingresos - total_egresos
+
+    tipo_header = [
+        Paragraph("TIPO",    st["section"]),
+        Paragraph("REGISTROS", st["section"]),
+        Paragraph("TOTAL",   st["section"]),
+        Paragraph("% INGRESO", st["section"]),
+    ]
+    tipo_rows = [tipo_header]
+    order = ["ingreso", "gasto_fijo", "gasto_variable", "deuda", "ahorro"]
+    for tp in order:
+        if tp not in totales_tipo:
+            continue
+        count = sum(1 for t in normales if t.get("type") == tp)
+        monto = totales_tipo[tp]
+        pct   = monto / total_ingresos * 100 if total_ingresos else 0
+        col   = C_GREEN if tp == "ingreso" else (C_BRAND if tp == "ahorro" else C_RED)
+        tipo_rows.append([
+            Paragraph(TYPE_LABELS.get(tp, tp), st["body"]),
+            Paragraph(str(count),
+                      ParagraphStyle("tc", fontName="Helvetica", fontSize=10,
+                                     textColor=C_MUTED, alignment=TA_CENTER, leading=13)),
+            Paragraph(_fmt_pen(monto),
+                      ParagraphStyle("tv", fontName="Helvetica-Bold", fontSize=10,
+                                     textColor=col, alignment=TA_RIGHT, leading=13)),
+            Paragraph(_fmt_pct(pct) if tp != "ingreso" else "—",
+                      ParagraphStyle("tp", fontName="Helvetica", fontSize=9,
+                                     textColor=C_MUTED, alignment=TA_CENTER, leading=13)),
+        ])
+
+    # Fila de saldo neto
+    c_saldo = C_GREEN if saldo_neto >= 0 else C_RED
+    tipo_rows.append([
+        Paragraph("SALDO NETO",
+                  ParagraphStyle("sn", fontName="Helvetica-Bold", fontSize=10,
+                                 textColor=c_saldo, leading=13)),
+        Paragraph("", st["body"]),
+        Paragraph(_fmt_pen(saldo_neto),
+                  ParagraphStyle("sv", fontName="Helvetica-Bold", fontSize=11,
+                                 textColor=c_saldo, alignment=TA_RIGHT, leading=14)),
+        Paragraph("", st["body"]),
+    ])
+
+    tipo_tbl = Table(
+        tipo_rows,
+        colWidths=[W_DRAW * 0.40, W_DRAW * 0.15, W_DRAW * 0.25, W_DRAW * 0.20],
+    )
+    tipo_tbl.setStyle(TableStyle([
+        ("BACKGROUND",     (0, 0), (-1, 0),   C_CARD_BG),
+        ("BACKGROUND",     (0, -1), (-1, -1), colors.HexColor("#f8f0ff")),
+        ("BOX",            (0, 0), (-1, -1),  0.5, C_LINE),
+        ("INNERGRID",      (0, 0), (-1, -1),  0.3, C_LINE),
+        ("LINEABOVE",      (0, -1), (-1, -1), 1.0, C_BRAND),
+        ("TOPPADDING",     (0, 0), (-1, -1),  6),
+        ("BOTTOMPADDING",  (0, 0), (-1, -1),  6),
+        ("LEFTPADDING",    (0, 0), (-1, -1),  8),
+        ("RIGHTPADDING",   (0, 0), (-1, -1),  8),
+        ("VALIGN",         (0, 0), (-1, -1),  "MIDDLE"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2),  [colors.white, C_CARD_BG]),
+    ]))
+    story.append(tipo_tbl)
+    sp(4)
+
+    # ── 3. RESUMEN POR CUENTA ─────────────────────────────────
+    if not account_filter:
+        section_title("Resumen por Cuenta")
+
+        cuentas = {}
+        for t in normales:
+            acc = t.get("account", "Sin cuenta")
+            if acc not in cuentas:
+                cuentas[acc] = {"ingresos": 0, "egresos": 0, "count": 0}
+            cuentas[acc]["count"] += 1
+            amt = float(t.get("amount", 0))
+            if t.get("type") == "ingreso":
+                cuentas[acc]["ingresos"] += abs(amt)
+            else:
+                cuentas[acc]["egresos"] += abs(amt)
+
+        acc_header = [
+            Paragraph("CUENTA",    st["section"]),
+            Paragraph("REGISTROS", st["section"]),
+            Paragraph("INGRESOS",  st["section"]),
+            Paragraph("EGRESOS",   st["section"]),
+            Paragraph("BALANCE",   st["section"]),
+        ]
+        acc_rows = [acc_header]
+        for acc, data in sorted(cuentas.items()):
+            bal = data["ingresos"] - data["egresos"]
+            c   = C_GREEN if bal >= 0 else C_RED
+            acc_rows.append([
+                Paragraph(acc, st["body"]),
+                Paragraph(str(data["count"]),
+                          ParagraphStyle("ac", fontName="Helvetica", fontSize=10,
+                                         textColor=C_MUTED, alignment=TA_CENTER, leading=13)),
+                Paragraph(_fmt_pen(data["ingresos"]),
+                          ParagraphStyle("ai", fontName="Helvetica-Bold", fontSize=10,
+                                         textColor=C_GREEN, alignment=TA_RIGHT, leading=13)),
+                Paragraph(_fmt_pen(data["egresos"]),
+                          ParagraphStyle("ae", fontName="Helvetica", fontSize=10,
+                                         textColor=C_RED, alignment=TA_RIGHT, leading=13)),
+                Paragraph(_fmt_pen(bal),
+                          ParagraphStyle("ab", fontName="Helvetica-Bold", fontSize=10,
+                                         textColor=c, alignment=TA_RIGHT, leading=13)),
+            ])
+
+        acc_tbl = Table(
+            acc_rows,
+            colWidths=[W_DRAW * 0.30, W_DRAW * 0.12,
+                       W_DRAW * 0.20, W_DRAW * 0.20, W_DRAW * 0.18],
+        )
+        acc_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0),  C_CARD_BG),
+            ("BOX",           (0, 0), (-1, -1), 0.5, C_LINE),
+            ("INNERGRID",     (0, 0), (-1, -1), 0.3, C_LINE),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1),  [colors.white, C_CARD_BG]),
+        ]))
+        story.append(acc_tbl)
+        sp(4)
+
+    # ── 4. LISTADO COMPLETO DE MOVIMIENTOS ────────────────────
+    section_title("Detalle de Movimientos")
+
+    tx_header = [
+        Paragraph("FECHA",       st["section"]),
+        Paragraph("DESCRIPCIÓN",  st["section"]),
+        Paragraph("CUENTA",      st["section"]),
+        Paragraph("CATEGORÍA",   st["section"]),
+        Paragraph("TIPO",        st["section"]),
+        Paragraph("MONTO",       st["section"]),
+    ]
+    tx_rows = [tx_header]
+
+    # Ordenar por fecha ascendente
+    sorted_txs = sorted(normales, key=lambda t: t.get("date", ""))
+
+    TYPE_SHORT = {
+        "ingreso":        "Ingreso",
+        "gasto_fijo":     "Fijo",
+        "gasto_variable": "Variable",
+        "deuda":          "Deuda",
+        "ahorro":         "Ahorro",
+    }
+
+    for t in sorted_txs:
+        monto = float(t.get("amount", 0))
+        tp    = t.get("type", "gasto_variable")
+        c_amt = C_GREEN if monto > 0 else C_RED
+        sign  = "+" if monto > 0 else "-"
+        desc  = str(t.get("description", ""))
+        if len(desc) > 42:
+            desc = desc[:41] + "…"
+        cat = str(t.get("category", ""))
+        if len(cat) > 18:
+            cat = cat[:17] + "…"
+
+        tx_rows.append([
+            Paragraph(str(t.get("date", "")),
+                      ParagraphStyle("td", fontName="Helvetica", fontSize=9,
+                                     textColor=C_MUTED, leading=12)),
+            Paragraph(desc,
+                      ParagraphStyle("tdesc", fontName="Helvetica", fontSize=9,
+                                     textColor=C_TEXT, leading=12)),
+            Paragraph(str(t.get("account", "—")),
+                      ParagraphStyle("tacc", fontName="Helvetica", fontSize=8.5,
+                                     textColor=C_MUTED, leading=12)),
+            Paragraph(cat,
+                      ParagraphStyle("tcat", fontName="Helvetica", fontSize=8.5,
+                                     textColor=C_MUTED, leading=12)),
+            Paragraph(TYPE_SHORT.get(tp, tp),
+                      ParagraphStyle("ttype", fontName="Helvetica", fontSize=8.5,
+                                     textColor=C_BRAND, alignment=TA_CENTER, leading=12)),
+            Paragraph(f"{sign}{_fmt_pen(abs(monto))}",
+                      ParagraphStyle("tamt", fontName="Helvetica-Bold", fontSize=9.5,
+                                     textColor=c_amt, alignment=TA_RIGHT, leading=12)),
+        ])
+
+    tx_tbl = Table(
+        tx_rows,
+        colWidths=[
+            W_DRAW * 0.14,   # Fecha  (ampliado: YYYY-MM-DD cabe sin salto)
+            W_DRAW * 0.29,   # Descripción (reducida para compensar)
+            W_DRAW * 0.17,   # Cuenta
+            W_DRAW * 0.18,   # Categoría
+            W_DRAW * 0.09,   # Tipo
+            W_DRAW * 0.13,   # Monto
+        ],
+        repeatRows=1,   # cabecera repetida en cada página
+    )
+    tx_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  C_CARD_BG),
+        ("BOX",           (0, 0), (-1, -1), 0.5, C_LINE),
+        ("INNERGRID",     (0, 0), (-1, -1), 0.3, C_LINE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1),  [colors.white, C_CARD_BG]),
+    ]))
+    story.append(tx_tbl)
+    sp(4)
+
+    # ── 5. TRANSFERENCIAS INTERNAS (si existen) ───────────────
+    if internos:
+        section_title("Transferencias Internas (excluidas del análisis)")
+
+        int_header = [
+            Paragraph("FECHA",       st["section"]),
+            Paragraph("DESCRIPCIÓN",  st["section"]),
+            Paragraph("CUENTA",      st["section"]),
+            Paragraph("MONTO",       st["section"]),
+        ]
+        int_rows = [int_header]
+        for t in sorted(internos, key=lambda x: x.get("date", "")):
+            monto = float(t.get("amount", 0))
+            sign  = "+" if monto > 0 else "-"
+            int_rows.append([
+                Paragraph(str(t.get("date", "")),
+                          ParagraphStyle("id", fontName="Helvetica", fontSize=9,
+                                         textColor=C_MUTED, leading=12)),
+                Paragraph(str(t.get("description", ""))[:50],
+                          ParagraphStyle("idesc", fontName="Helvetica", fontSize=9,
+                                         textColor=colors.HexColor("#888899"), leading=12)),
+                Paragraph(str(t.get("account", "—")),
+                          ParagraphStyle("iacc", fontName="Helvetica", fontSize=8.5,
+                                         textColor=C_MUTED, leading=12)),
+                Paragraph(f"{sign}{_fmt_pen(abs(monto))}",
+                          ParagraphStyle("iamt", fontName="Helvetica-Bold", fontSize=9,
+                                         textColor=colors.HexColor("#38bdf8"),
+                                         alignment=TA_RIGHT, leading=12)),
+            ])
+
+        int_tbl = Table(
+            int_rows,
+            colWidths=[W_DRAW * 0.12, W_DRAW * 0.46, W_DRAW * 0.22, W_DRAW * 0.20],
+        )
+        int_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#f0f8ff")),
+            ("BOX",           (0, 0), (-1, -1), 0.5, colors.HexColor("#bae6fd")),
+            ("INNERGRID",     (0, 0), (-1, -1), 0.3, colors.HexColor("#e0f2fe")),
+            ("TOPPADDING",    (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fcff")]),
+        ]))
+        story.append(int_tbl)
+        sp(2)
+        story.append(Paragraph(
+            "🔒 Las transferencias internas entre cuentas propias no afectan los totales del análisis financiero.",
+            st["chart_note"],
+        ))
+        sp(4)
+
+    # ── 6. FOOTER ─────────────────────────────────────────────
+    sp(6)
+    hr(C_LINE, 0.5)
+    story.append(Paragraph(
+        f"Período: {period_label}  •  {len(normales)} movimientos  •  finanzas.alias.nom.pe",
+        st["footer"],
+    ))
+
+    try:
+        doc.build(story)
+        return buf.getvalue()
+    except Exception as e:
+        logger.error(f"[PDF] Error generando estado de cuenta: {e}", exc_info=True)
         raise

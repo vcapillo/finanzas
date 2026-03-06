@@ -49,6 +49,9 @@ import GastoTreemap           from "./components/dashboard/GastoTreemap";
 // ── G-05: Heatmap semanal ──────────────────────────
 import HeatmapSemanal         from "./components/dashboard/HeatmapSemanal";
 
+// ── G-08: Radar de Salud Financiera ────────────────────
+import RadarSaludFinanciera   from "./components/patrimonio/RadarSaludFinanciera";
+
 // ─────────────────────────────────────────────────────────────
 const TABS = [
   { id:"dashboard",   icon:<LayoutDashboard size={15}/>, label:"Dashboard"       },
@@ -518,6 +521,9 @@ export default function App({ onLogout }) {
               );
             })()}
 
+            {/* G-08 — Radar de Salud Financiera */}
+            <RadarSaludFinanciera period={period} />
+
             {/* F-03 — Resumen Mensual con IA */}
             <ResumenMensualPanel period={period} />
 
@@ -624,6 +630,26 @@ export default function App({ onLogout }) {
                 {!showForm&&editingTxId===null&&<button onClick={()=>setShowForm(true)} style={{...s.btn,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",display:"flex",alignItems:"center",gap:5}}>
                   <Plus size={13}/> Agregar
                 </button>}
+                <button
+                  title="Descargar Estado de Cuenta PDF"
+                  onClick={async()=>{
+                    try{
+                      showToast("Generando PDF...");
+                      const acct=filterAccount==="all"?null:filterAccount;
+                      const blob=await api.descargarEstadoCuentaPDF(period,acct);
+                      const url=URL.createObjectURL(blob);
+                      const a=document.createElement("a");
+                      a.href=url;
+                      const suffix=acct?`_${acct.replace(/\s+/g,"_")}`:""; 
+                      a.download=`FinanzaOS_EstadoCuenta_${period}${suffix}.pdf`;
+                      document.body.appendChild(a);a.click();
+                      document.body.removeChild(a);URL.revokeObjectURL(url);
+                      showToast("✓ PDF descargado");
+                    }catch(e){showToast("❌ "+e.message);}
+                  }}
+                  style={{...s.btn,background:"rgba(167,139,250,0.10)",color:"#a78bfa",border:"1px solid rgba(167,139,250,0.25)",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
+                  <Download size={13}/> PDF
+                </button>
               </div>
               <div style={{display:"flex",gap:8}}>
                 {[{l:"Registros",v:filteredTxs.length,c:"#888"},{l:"Ingresos",v:fmtN(filteredTxs.filter(t=>t.type==="ingreso").reduce((s,t)=>s+t.amount,0)),c:"#22c55e"},

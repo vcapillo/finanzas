@@ -227,6 +227,52 @@ async def registrar_snapshot(
     }
 
 
+# ── GET: Snapshots de un activo específico ──────────────────
+
+@router.get("/snapshots/{asset_id}")
+def get_snapshots_por_activo(
+    asset_id: int,
+    db: Session = Depends(get_db),
+):
+    """Retorna el historial de snapshots de saldo de un activo, orden desc."""
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Activo no encontrado")
+
+    snaps = (
+        db.query(AssetBalanceSnapshot)
+        .filter(AssetBalanceSnapshot.asset_id == asset_id)
+        .order_by(AssetBalanceSnapshot.snapshot_date.desc())
+        .all()
+    )
+    return [
+        {
+            "id":            s.id,
+            "balance":       s.balance,
+            "balance_pen":   round(s.balance_pen or 0, 2),
+            "exchange_rate": s.exchange_rate,
+            "source":        s.source,
+            "snapshot_date": s.snapshot_date,
+        }
+        for s in snaps
+    ]
+
+
+# ── DELETE: Eliminar un snapshot de saldo ────────────────────
+
+@router.delete("/snapshots/{snapshot_id}", status_code=204)
+def eliminar_snapshot(
+    snapshot_id: int,
+    db: Session = Depends(get_db),
+):
+    """Elimina un snapshot de saldo por su ID."""
+    snap = db.query(AssetBalanceSnapshot).filter(AssetBalanceSnapshot.id == snapshot_id).first()
+    if not snap:
+        raise HTTPException(status_code=404, detail="Snapshot no encontrado")
+    db.delete(snap)
+    db.commit()
+
+
 # ── GET: Historial de patrimonio neto ────────────────────────
 
 @router.get("/historial")

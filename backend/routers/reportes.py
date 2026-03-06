@@ -16,7 +16,7 @@ from sqlalchemy import func as sqlfunc
 
 from database import get_db
 import models
-from services.pdf_service import generar_pdf_resumen
+from services.pdf_service import generar_pdf_resumen, generar_pdf_estado_cuenta
 
 logger = logging.getLogger("router.reportes")
 
@@ -238,6 +238,102 @@ def descargar_resumen_pdf(period: str, db: Session = Depends(get_db)):
 
     filename = f"FinanzasOS_Resumen_{period}.pdf"
     logger.info(f"[Reportes] PDF generado: {filename} ({len(pdf_bytes):,} bytes)")
+
+    return Response(
+        content    = pdf_bytes,
+        media_type = "application/pdf",
+        headers    = {
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length":       str(len(pdf_bytes)),
+        },
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# F-08 (2/3): ESTADO DE CUENTA
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/estado-cuenta/{period}")
+def descargar_estado_cuenta_pdf(
+    period: str,
+    account: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Genera y descarga el Estado de Cuenta mensual en PDF.
+    Incluye:
+      - Resumen por tipo de movimiento con saldo neto
+      - Resumen por cuenta (ingresos, egresos, balance)
+      - Listado completo de movimientos ordenados por fecha
+      - Sección de transferencias internas (separada)
+
+    Parámetros:
+        period:  formato YYYY-MM (ej. 2026-02)
+        account: nombre de cuenta para filtrar (opcional)
+                 ej. ?account=iO+Crédito
+    """
+    # Consultar transacciones del período
+    q = db.query(models.Transaction).filter(
+        models.Transaction.period == period
+    )
+    if account:
+        q = q.filter(models.Transaction.account == account)
+
+    txs = q.order_by(models.Transaction.date).all()
+
+    if not txs:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No hay movimientos registrados para el período {period}"
+                + (f" en la cuenta '{account}'" if account else "") + "."
+            ),
+        )
+
+    # Serializar transacciones a dicts
+    tx_dicts = [
+        {
+            "id":                   t.id,
+            "date":                 t.date,
+            "period":               t.period,
+            "description":          t.description,
+            "amount":               t.amount,
+            "type":                 t.type,
+            "category":             t.category,
+            "account":              t.account,
+            "excluir_del_analisis": t.excluir_del_analisis,
+        }
+        for t in txs
+    ]
+
+    # Obtener perfil del usuario
+    profile_obj = db.query(models.Profile).filter(models.Profile.id == 1).first()
+    profile_dict = None
+    if profile_obj:
+        profile_dict = {
+            "name":    profile_obj.name,
+            "income":  profile_obj.income,
+            "pay_day": profile_obj.pay_day,
+        }
+
+    # Generar PDF
+    try:
+        pdf_bytes = generar_pdf_estado_cuenta(
+            period       = period,
+            transactions = tx_dicts,
+            profile      = profile_dict,
+            account_filter = account,
+        )
+    except Exception as e:
+        logger.error(f"[Reportes] Error generando estado de cuenta {period}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generando el PDF: {str(e)}",
+        )
+
+    suffix   = f"_{account.replace(' ', '_')}" if account else ""
+    filename = f"FinanzasOS_EstadoCuenta_{period}{suffix}.pdf"
+    logger.info(f"[Reportes] Estado de cuenta generado: {filename} ({len(pdf_bytes):,} bytes)")
 
     return Response(
         content    = pdf_bytes,
