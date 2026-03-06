@@ -119,6 +119,16 @@ class ProfileOut(ProfileIn):
 class ImportBatch(BaseModel):
     transactions: list[TransactionIn]
 
+class TransactionUpdate(BaseModel):
+    """OBS-08: Edición parcial de transacción. Solo actualiza los campos proporcionados."""
+    date:        Optional[str]   = None
+    description: Optional[str]   = None
+    amount:      Optional[float] = None
+    type:        Optional[str]   = None
+    category:    Optional[str]   = None
+    account:     Optional[str]   = None
+    period:      Optional[str]   = None
+
 class BulkBudget(BaseModel):
     period:  str
     budgets: dict  # {category: amount}
@@ -194,6 +204,28 @@ def import_transactions(batch: ImportBatch, db: Session = Depends(get_db)):
         "inserted": inserted,
         "skipped":  skipped
     }
+
+
+@app.put("/transactions/{tx_id}", response_model=TransactionOut)
+def update_transaction(tx_id: int, tx: TransactionUpdate, db: Session = Depends(get_db)):
+    """OBS-08: Edita una transacción existente (fecha, descripción, monto, tipo, categoría, cuenta).
+    Las transferencias internas (excluir_del_analisis=True) no son editables desde aquí."""
+    obj = db.query(models.Transaction).filter(models.Transaction.id == tx_id).first()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+    if obj.excluir_del_analisis:
+        raise HTTPException(
+            status_code=400,
+            detail="Las transferencias internas no se pueden editar desde Movimientos. Usa el módulo Transferencias Internas."
+        )
+    for field, value in tx.model_dump(exclude_none=True).items():
+        setattr(obj, field, value)
+    # Recalcular period si cambia la fecha
+    if tx.date and not tx.period:
+        obj.period = tx.date[:7]
+    db.commit()
+    db.refresh(obj)
+    return obj
 
 
 @app.delete("/transactions/{tx_id}", status_code=204)

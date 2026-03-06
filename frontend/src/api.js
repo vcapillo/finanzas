@@ -42,6 +42,10 @@ export const api = {
   importTransactions: (transactions) =>
     request("POST", "/transactions/import", { transactions }),
 
+  // PUT /transactions/:id  (OBS-08: edición de movimiento)
+  updateTransaction: (id, data) =>
+    request("PUT", `/transactions/${id}`, data),
+
   // DELETE /transactions/:id
   deleteTransaction: (id) =>
     request("DELETE", `/transactions/${id}`),

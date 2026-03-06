@@ -11,7 +11,7 @@ import {
 import {
   LayoutDashboard, List, Upload, Target, Calendar, Settings,
   Plus, X, Trash2, Bell, Download, TrendingUp, DollarSign,
-  Search, Info, HelpCircle, Flag,
+  Search, Info, HelpCircle, Flag, Edit2,
 } from "lucide-react";
 
 // ── Módulos internos ──────────────────────────────────────────
@@ -91,6 +91,11 @@ export default function App({ onLogout }) {
     date: new Date().toISOString().split("T")[0],
     description:"", amount:"", type:"gasto_variable", category:"Alimentación", account:"BCP",
   });
+  // OBS-08: edición de movimiento
+  const [editingTxId,       setEditingTxId]        = useState(null);
+  const [editTxData,        setEditTxData]          = useState(null);
+  // OBS-07: filtro por cuenta
+  const [filterAccount,     setFilterAccount]       = useState("all");
 
   const showToast = (msg) => { setToast(msg); setTimeout(()=>setToast(""), 2800); };
 
@@ -102,6 +107,11 @@ export default function App({ onLogout }) {
   const billingCycles= settings?.billing_cycles || [];
   const categories   = settings?.categories     || DEFAULT_CATEGORIES;
   const classify     = (desc, amt) => autoClassify(desc, amt, customRules);
+  // OBS-07: color de cuenta desde configuración
+  const getAccountColor = (accountName) => {
+    const acc = settings?.accounts?.find(a=>a.name===accountName);
+    return acc?.color || "#555";
+  };
 
   // ── Carga inicial ──────────────────────────────────────────
   useEffect(()=>{
@@ -188,6 +198,19 @@ export default function App({ onLogout }) {
     } catch(e) { showToast("Error: "+e.message); }
   };
 
+  // OBS-08: actualizar movimiento existente
+  const updateTx = async () => {
+    if (!editTxData?.description || !editTxData?.amount) return;
+    const amount = editTxData.type==="ingreso" ? Math.abs(parseFloat(editTxData.amount)) : -Math.abs(parseFloat(editTxData.amount));
+    const txPeriod = editTxData.date.substring(0,7);
+    try {
+      const updated = await api.updateTransaction(editingTxId, {...editTxData, amount, period:txPeriod});
+      setTransactions(prev => prev.map(t => t.id===editingTxId ? updated : t));
+      setEditingTxId(null); setEditTxData(null);
+      showToast("✓ Movimiento actualizado");
+    } catch(e) { showToast("Error al actualizar: "+e.message); }
+  };
+
   const handleImport = async (txs) => {
     try {
       const result = await api.importTransactions(txs);
@@ -260,6 +283,7 @@ export default function App({ onLogout }) {
 
   const filteredTxs = transactions
     .filter(t=>filterType==="all"||t.type===filterType)
+    .filter(t=>filterAccount==="all"||t.account===filterAccount)  // OBS-07
     .filter(t=>!searchQ||t.description.toLowerCase().includes(searchQ.toLowerCase()))
     .sort((a,b)=>b.date.localeCompare(a.date));
 
@@ -532,42 +556,50 @@ export default function App({ onLogout }) {
             {movTab==="transferencias"&&<TransferenciasPanel currentPeriod={period} onTransferCreated={async()=>{const f=await api.getTransactions(period);setTransactions(f);}}/>}
             {movTab==="heatmap"&&<HeatmapSemanal transactions={transactions} period={period}/>}
             {movTab==="lista"&&<>
-              {showForm&&(
-                <div style={{...s.card,border:"1px solid rgba(34,197,94,0.3)"}}>
+              {/* OBS-08: Formulario unificado para agregar Y editar movimientos */}
+              {(showForm||editingTxId!==null)&&(()=>{
+                const isEdit=editingTxId!==null;
+                const formData=isEdit?editTxData:newTx;
+                const setFD=isEdit?setEditTxData:setNewTx;
+                return (
+                <div style={{...s.card,border:`1px solid ${isEdit?"rgba(56,189,248,0.35)":"rgba(34,197,94,0.3)"}`}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                    <span style={{color:"#22c55e",fontWeight:700,fontSize:13}}>+ Nuevo Movimiento</span>
-                    <button onClick={()=>setShowForm(false)} style={{background:"none",border:"none",color:"#444",cursor:"pointer"}}><X size={15}/></button>
+                    <span style={{color:isEdit?"#38bdf8":"#22c55e",fontWeight:700,fontSize:13}}>{isEdit?"✏️ Editar Movimiento":"+ Nuevo Movimiento"}</span>
+                    <button onClick={()=>{setShowForm(false);setEditingTxId(null);setEditTxData(null);}} style={{background:"none",border:"none",color:"#444",cursor:"pointer"}}><X size={15}/></button>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
-                    <div><label style={s.label}>FECHA</label><input type="date" style={s.input} value={newTx.date} onChange={e=>setNewTx(x=>({...x,date:e.target.value}))}/></div>
-                    <div style={{gridColumn:"span 2"}}><label style={s.label}>DESCRIPCIÓN</label><input style={s.input} placeholder="Ej. Supermercado Wong" value={newTx.description} onChange={e=>setNewTx(x=>({...x,description:e.target.value}))}/></div>
-                    <div><label style={s.label}>MONTO (S/)</label><input type="number" style={s.input} value={newTx.amount} onChange={e=>setNewTx(x=>({...x,amount:e.target.value}))}/></div>
+                    <div><label style={s.label}>FECHA</label><input type="date" style={s.input} value={formData?.date||""} onChange={e=>setFD(x=>({...x,date:e.target.value}))}/></div>
+                    <div style={{gridColumn:"span 2"}}><label style={s.label}>DESCRIPCIÓN</label><input style={s.input} placeholder="Ej. Supermercado Wong" value={formData?.description||""} onChange={e=>setFD(x=>({...x,description:e.target.value}))}/></div>
+                    <div><label style={s.label}>MONTO (S/)</label><input type="number" style={s.input} value={formData?.amount||""} onChange={e=>setFD(x=>({...x,amount:e.target.value}))}/></div>
                     <div>
                       <label style={{...s.label,display:"flex",alignItems:"center",gap:4}}>TIPO
-                        {newTx.type==="deuda"&&<span title="Pago de obligación contraída previamente" style={{cursor:"help",color:"#a78bfa",display:"inline-flex",alignItems:"center"}}><Info size={12}/></span>}
+                        {formData?.type==="deuda"&&<span title="Pago de obligación contraída previamente" style={{cursor:"help",color:"#a78bfa",display:"inline-flex",alignItems:"center"}}><Info size={12}/></span>}
                       </label>
-                      <select style={s.select} value={newTx.type} onChange={e=>setNewTx(x=>({...x,type:e.target.value,category:(categories[e.target.value]||[])[0]||""}))}>
+                      <select style={s.select} value={formData?.type||"gasto_variable"} onChange={e=>setFD(x=>({...x,type:e.target.value,category:(categories[e.target.value]||[])[0]||""}))}>
                         {Object.entries(TYPE_CONFIG).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
                       </select>
-                      {newTx.type==="deuda"&&<div style={{marginTop:5,padding:"6px 9px",borderRadius:6,background:"rgba(167,139,250,0.08)",border:"1px solid rgba(167,139,250,0.25)",fontSize:10.5,color:"#c4b5fd",lineHeight:1.5}}>
+                      {formData?.type==="deuda"&&<div style={{marginTop:5,padding:"6px 9px",borderRadius:6,background:"rgba(167,139,250,0.08)",border:"1px solid rgba(167,139,250,0.25)",fontSize:10.5,color:"#c4b5fd",lineHeight:1.5}}>
                         💳 <strong>Deuda/Cuota:</strong> obligación de crédito ya contraída.<br/>
                         <span style={{opacity:0.8}}>Ej: pago tarjeta BBVA, cuota préstamo, iO crédito.</span>
                       </div>}
                     </div>
                     <div><label style={s.label}>CATEGORÍA</label>
-                      <select style={s.select} value={newTx.category} onChange={e=>setNewTx(x=>({...x,category:e.target.value}))}>
-                        {(categories[newTx.type]||[]).map(c=><option key={c}>{c}</option>)}
+                      <select style={s.select} value={formData?.category||""} onChange={e=>setFD(x=>({...x,category:e.target.value}))}>
+                        {(categories[formData?.type||"gasto_variable"]||[]).map(c=><option key={c}>{c}</option>)}
                       </select>
                     </div>
                     <div><label style={s.label}>CUENTA</label>
-                      <select style={s.select} value={newTx.account} onChange={e=>setNewTx(x=>({...x,account:e.target.value}))}>
+                      <select style={s.select} value={formData?.account||""} onChange={e=>setFD(x=>({...x,account:e.target.value}))}>
                         {activeAccounts.map(a=><option key={a}>{a}</option>)}
                       </select>
                     </div>
                   </div>
-                  <button onClick={addTx} style={{...s.btn,background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",marginTop:12}}>Guardar movimiento</button>
+                  <button onClick={isEdit?updateTx:addTx} style={{...s.btn,background:isEdit?"linear-gradient(135deg,#38bdf8,#0284c7)":"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",marginTop:12}}>
+                    {isEdit?"Actualizar movimiento":"Guardar movimiento"}
+                  </button>
                 </div>
-              )}
+                );
+              })()}
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                 <div style={{position:"relative",flex:1,minWidth:200}}>
                   <Search size={13} color="#444" style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)"}}/> 
@@ -584,7 +616,12 @@ export default function App({ onLogout }) {
                     </button>
                   ))}
                 </div>
-                {!showForm&&<button onClick={()=>setShowForm(true)} style={{...s.btn,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",display:"flex",alignItems:"center",gap:5}}>
+                <select value={filterAccount} onChange={e=>setFilterAccount(e.target.value)}
+                  style={{...s.select,width:"auto",padding:"5px 10px",fontSize:11,color:filterAccount==="all"?"#555":"#38bdf8",border:`1px solid ${filterAccount==="all"?"#1a1a20":"rgba(56,189,248,0.3)"}`}}>
+                  <option value="all">Todas las cuentas</option>
+                  {activeAccounts.map(a=><option key={a} value={a}>{a}</option>)}
+                </select>
+                {!showForm&&editingTxId===null&&<button onClick={()=>setShowForm(true)} style={{...s.btn,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",display:"flex",alignItems:"center",gap:5}}>
                   <Plus size={13}/> Agregar
                 </button>}
               </div>
@@ -599,33 +636,55 @@ export default function App({ onLogout }) {
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:5}}>
                 {filteredTxs.length>0&&(
-                  <div style={{display:"grid",gridTemplateColumns:"58px 82px 1fr 110px 80px 85px 50px 36px",gap:6,padding:"4px 14px",alignItems:"center"}}>
-                    {["Período","Fecha","Descripción / Comercio","Categoría","Tipo","Monto","",""].map((h,i)=>(
+                  <div style={{display:"grid",gridTemplateColumns:"52px 78px 1fr 88px 96px 70px 82px 46px 22px 22px",gap:6,padding:"4px 14px",alignItems:"center"}}>
+                    {["Período","Fecha","Descripción / Comercio","Cuenta","Categoría","Tipo","Monto","","",""].map((h,i)=>(
                       <span key={i} style={{color:"#2a2a30",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</span>
                     ))}
                   </div>
                 )}
                 {filteredTxs.length===0&&<div style={{...s.card,textAlign:"center",color:"#444",padding:32}}>No hay movimientos para este período.</div>}
-                {filteredTxs.map(tx=>(
-                  <div key={tx.id} style={{background:"#0f0f12",border:`1px solid ${tx.excluir_del_analisis?"rgba(56,189,248,0.12)":"#1a1a20"}`,borderLeft:`3px solid ${tx.excluir_del_analisis?"#38bdf8":TYPE_CONFIG[tx.type]?.color||"#555"}`,borderRadius:8,padding:"10px 14px",display:"grid",gridTemplateColumns:"58px 82px 1fr 110px 80px 85px 50px 36px",gap:6,alignItems:"center"}}>
+                {filteredTxs.map(tx=>{
+                  const accColor=getAccountColor(tx.account);
+                  const isEditing=editingTxId===tx.id;
+                  return (
+                  <div key={tx.id} style={{background:isEditing?"#0c1520":"#0f0f12",border:`1px solid ${isEditing?"rgba(56,189,248,0.35)":tx.excluir_del_analisis?"rgba(56,189,248,0.12)":"#1a1a20"}`,borderLeft:`3px solid ${tx.excluir_del_analisis?"#38bdf8":TYPE_CONFIG[tx.type]?.color||"#555"}`,borderRadius:8,padding:"10px 14px",display:"grid",gridTemplateColumns:"52px 78px 1fr 88px 96px 70px 82px 46px 22px 22px",gap:6,alignItems:"center"}}>
                     <span style={{color:"#333",fontSize:10}}>{tx.period||tx.date?.substring(0,7)||""}</span>
                     <span style={{color:"#444",fontSize:11}}>{tx.date}</span>
                     <span style={{color:tx.excluir_del_analisis?"#555":"#d0d0d8",fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tx.description}</span>
+                    {/* OBS-07: columna cuenta con punto de color */}
+                    <div style={{display:"flex",alignItems:"center",gap:4,overflow:"hidden"}}>
+                      <span style={{width:6,height:6,borderRadius:"50%",background:accColor,flexShrink:0,boxShadow:`0 0 4px ${accColor}70`}}/>
+                      <span style={{color:"#666",fontSize:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tx.account||"—"}</span>
+                    </div>
                     <span style={{color:"#555",fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tx.category||"—"}</span>
                     <Chip type={tx.type}/>
                     <span style={{color:tx.amount>0?"#22c55e":"#f87171",fontWeight:700,fontSize:13,textAlign:"right"}}>{tx.amount>0?"+":"-"}{fmt(tx.amount)}</span>
+                    {/* badge fuente */}
                     {tx.excluir_del_analisis
                       ?<span style={{background:"rgba(56,189,248,0.08)",color:"#38bdf8",fontSize:9,padding:"2px 6px",borderRadius:3,textAlign:"center",whiteSpace:"nowrap"}}>INTERNO 🔒</span>
                       :tx.source&&tx.source!=="manual"
                         ?<span style={{background:"rgba(56,189,248,0.06)",color:"#555",fontSize:9,padding:"2px 5px",borderRadius:3}}>{tx.source==="import_csv"?"CSV":"PDF"}</span>
                         :<span/>
                     }
+                    {/* OBS-08: botón editar */}
+                    <button
+                      onClick={()=>{
+                        if(tx.excluir_del_analisis){showToast("⚠️ Edita transferencias internas desde su módulo.");return;}
+                        if(isEditing){setEditingTxId(null);setEditTxData(null);}
+                        else{setEditingTxId(tx.id);setEditTxData({...tx,amount:Math.abs(tx.amount)});setShowForm(false);window.scrollTo({top:0,behavior:"smooth"});}
+                      }}
+                      title={tx.excluir_del_analisis?"No editable: transferencia interna":isEditing?"Cancelar edición":"Editar movimiento"}
+                      style={{background:isEditing?"rgba(56,189,248,0.15)":"none",border:"none",color:tx.excluir_del_analisis?"#1e1e26":isEditing?"#38bdf8":"#333",cursor:tx.excluir_del_analisis?"not-allowed":"pointer",padding:3,borderRadius:3,display:"flex",alignItems:"center"}}>
+                      <Edit2 size={12}/>
+                    </button>
+                    {/* botón eliminar */}
                     <button onClick={()=>deleteTx(tx.id)} title={tx.excluir_del_analisis?"No se puede eliminar: transferencia interna":"Eliminar"}
-                      style={{background:"none",border:"none",color:tx.excluir_del_analisis?"#1a1a20":"#2a2a30",cursor:tx.excluir_del_analisis?"not-allowed":"pointer",padding:3}}>
+                      style={{background:"none",border:"none",color:tx.excluir_del_analisis?"#1a1a20":"#2a2a30",cursor:tx.excluir_del_analisis?"not-allowed":"pointer",padding:3,display:"flex",alignItems:"center"}}>
                       <Trash2 size={13}/>
                     </button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </>}
           </div>
