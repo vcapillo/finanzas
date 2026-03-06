@@ -1,5 +1,5 @@
 /**
- * FinanzasVH v3.1 — GastoTreemap.jsx
+ * FinanzasOS v3.1 — GastoTreemap.jsx
  * G-01: Mapa de calor jerárquico de gastos por categoría y tipo.
  * Usa recharts Treemap con celdas personalizadas en tema oscuro.
  */

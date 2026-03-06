@@ -1,5 +1,5 @@
 # ============================================================
-# FinanzasVH v3.0 — services/gemini_service.py
+# FinanzasOS v3.0 — services/gemini_service.py
 # SDK: google-genai (nuevo)  |  Modelo: gemini-2.0-flash-lite
 # Con fallback local para cuando la cuota de Gemini esté agotada
 # ============================================================

@@ -1,5 +1,5 @@
 """
-FinanzasVH — F-04: Módulo de Metas Financieras
+FinanzasOS — F-04: Módulo de Metas Financieras
 Router FastAPI con CRUD completo + registro de abonos.
 """
 from datetime import datetime, date as date_type

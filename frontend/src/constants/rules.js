@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — constants/rules.js
+ * FinanzasOS — constants/rules.js
  * Reglas del sistema (base, no editables) y mapeo de IDs para CoinGecko.
  */
 

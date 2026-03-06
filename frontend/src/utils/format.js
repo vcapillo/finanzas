@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — utils/format.js
+ * FinanzasOS — utils/format.js
  * Funciones de formateo de montos y períodos.
  */
 

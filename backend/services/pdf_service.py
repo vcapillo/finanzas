@@ -1,8 +1,8 @@
 """
-FinanzasVH — services/pdf_service.py
+FinanzasOS — services/pdf_service.py
 F-08: Generación de Reportes PDF con Gráficos
 
-Genera el resumen mensual de salud financiera como PDF con marca FinanzasVH.
+Genera el resumen mensual de salud financiera como PDF con marca FinanzasOS.
 Incluye 4 gráficos nativos ReportLab intercalados en cada sección:
   1. Barras horizontales de KPIs con semáforo  → después de KPIs
   2. Radar de salud financiera (6 dimensiones) → después de diagnóstico
@@ -48,7 +48,7 @@ from reportlab.platypus import (
 
 logger = logging.getLogger("pdf_service")
 
-# ─── Paleta FinanzasVH ────────────────────────────────────────
+# ─── Paleta FinanzasOS ────────────────────────────────────────
 C_BRAND     = colors.HexColor("#a78bfa")
 C_BRAND2    = colors.HexColor("#38bdf8")
 C_GREEN     = colors.HexColor("#22c55e")
@@ -519,7 +519,7 @@ class _DocWithHeaderFooter(BaseDocTemplate):
 
         canvas.setFillColor(C_BRAND)
         canvas.setFont("Helvetica-Bold", 15)
-        canvas.drawString(1.8 * cm, H - 1.3 * cm, "FinanzasVH")
+        canvas.drawString(1.8 * cm, H - 1.3 * cm, "FinanzasOS")
 
         canvas.setFillColor(colors.HexColor("#c4b5fd"))
         canvas.setFont("Helvetica", 9)
@@ -546,7 +546,7 @@ class _DocWithHeaderFooter(BaseDocTemplate):
         canvas.setFillColor(colors.HexColor("#aaaabc"))
         canvas.setFont("Helvetica", 7.5)
         canvas.drawString(1.8 * cm, 0.9 * cm,
-                          "FinanzasVH  •  Victor Hugo Capillo  •  Uso exclusivo personal")
+                          "FinanzasOS  •  Victor Hugo Capillo  •  Uso exclusivo personal")
         canvas.drawRightString(W - 1.8 * cm, 0.9 * cm, f"Página {doc.page}")
 
         canvas.restoreState()
@@ -592,7 +592,7 @@ def generar_pdf_resumen(period: str, contenido: dict,
         rightMargin  = 1.8 * cm,
         topMargin    = 3.2 * cm,
         bottomMargin = 1.8 * cm,
-        title        = f"FinanzasVH — Resumen {period_label}",
+        title        = f"FinanzasOS — Resumen {period_label}",
         author       = "Victor Hugo Capillo",
     )
 
@@ -820,7 +820,7 @@ def generar_pdf_resumen(period: str, contenido: dict,
         sp(2)
         story.append(Paragraph(f'"{frase}"', st["quote"]))
         sp(2)
-        story.append(Paragraph("— FinanzasVH · Victor Hugo · 2026",
+        story.append(Paragraph("— FinanzasOS · Victor Hugo · 2026",
                                 ParagraphStyle("attr", fontName="Helvetica", fontSize=8,
                                                textColor=colors.HexColor("#ccccdd"),
                                                alignment=TA_CENTER, leading=11)))

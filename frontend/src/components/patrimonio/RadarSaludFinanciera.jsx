@@ -1,6 +1,6 @@
 /**
  * G-08 — RadarSaludFinanciera.jsx
- * Módulo Patrimonio — FinanzasVH v3.1
+ * Módulo Patrimonio — FinanzasOS v3.1
  *
  * Uso en PatrimonioConsolidado.jsx:
  *   import RadarSaludFinanciera from "./RadarSaludFinanciera";

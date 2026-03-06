@@ -1,5 +1,5 @@
 # ============================================================
-# FinanzasVH v3.1 — routers/analytics.py
+# FinanzasOS v3.1 — routers/analytics.py
 # Métricas financieras reales respetando excluir_del_analisis
 # ============================================================
 

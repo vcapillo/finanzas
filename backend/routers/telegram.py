@@ -1,5 +1,5 @@
 """
-FinanzasVH — routers/telegram.py
+FinanzasOS — routers/telegram.py
 F-01: Endpoints REST para gestión del Bot Telegram
 """
 import os

@@ -1,5 +1,5 @@
 """
-FinanzasVH — API Backend
+FinanzasOS — API Backend
 FastAPI + SQLAlchemy + SQLite
 """
 import os
@@ -17,7 +17,7 @@ from routers import patrimonio, ingesta
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="FinanzasVH API",
+    title="FinanzasOS API",
     description="Sistema de gestión financiera personal",
     version="3.0.0"
 )
@@ -93,7 +93,7 @@ class BulkBudget(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "app": "FinanzasVH", "version": "3.0.0"}
+    return {"status": "ok", "app": "FinanzasOS", "version": "3.0.0"}
 
 
 # ═══════════════════════════════════════════════════════════════

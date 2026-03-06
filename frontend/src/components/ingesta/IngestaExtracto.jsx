@@ -1,5 +1,5 @@
 /**
- * FinanzasVH v3.1 — IngestaExtracto.jsx  (Módulo Unificado: Importar + Ingesta IA)
+ * FinanzasOS v3.1 — IngestaExtracto.jsx  (Módulo Unificado: Importar + Ingesta IA)
  * OBS-05: Unificación de módulos Importar e Ingesta IA
  * - Modo texto (PDF pegado) + Modo CSV
  * - Toggle "Usar IA" on/off: OFF = clasificación por reglas; ON = Gemini para sin match

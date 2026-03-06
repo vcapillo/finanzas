@@ -1,5 +1,5 @@
 /**
- * FinanzasVH v3.1 — ResumenMensualPanel.jsx
+ * FinanzasOS v3.1 — ResumenMensualPanel.jsx
  * F-03: Resumen Mensual de Salud Financiera con IA (Gemini)
  *
  * Muestra el diagnóstico narrativo generado por Gemini para el período activo.
@@ -84,7 +84,7 @@ export default function ResumenMensualPanel({ period }) {
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
       a.href     = url;
-      a.download = `FinanzasVH_Resumen_${period}.pdf`;
+      a.download = `FinanzasOS_Resumen_${period}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

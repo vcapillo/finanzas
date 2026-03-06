@@ -1,5 +1,5 @@
 """
-FinanzasVH — services/telegram_service.py
+FinanzasOS — services/telegram_service.py
 F-01: Bot de Notificaciones Telegram
 
 Responsabilidades:
@@ -61,14 +61,14 @@ def send_test_message(token: str = None, chat_id: str = None) -> dict:
     """Mensaje de prueba para verificar conectividad."""
     now = now_lima().strftime("%d/%m/%Y %H:%M")  # Lima UTC-5
     text = (
-        "✅ <b>FinanzasVH — Conexión exitosa</b>\n"
+        "✅ <b>FinanzasOS — Conexión exitosa</b>\n"
         f"📅 {now}\n\n"
         "El bot de notificaciones está correctamente configurado.\n"
         "Recibirás alertas diarias a las <b>8:00 AM</b> sobre:\n"
         "  💳 Vencimientos de tarjeta\n"
         "  🔁 Servicios recurrentes\n"
         "  📉 Alertas de ahorro\n\n"
-        "👉 <a href='https://finanzas.alias.nom.pe/'>Abrir FinanzasVH</a>"
+        "👉 <a href='https://finanzas.alias.nom.pe/'>Abrir FinanzasOS</a>"
     )
     return send_message(text, token=token, chat_id=chat_id)
 
@@ -172,11 +172,11 @@ def build_daily_notification(profile: dict, settings: dict,
 
     # ── Construir mensaje ────────────────────────────────────
     lineas = [
-        f"📅 <b>FinanzasVH | {hoy_str}</b>",
+        f"📅 <b>FinanzasOS | {hoy_str}</b>",
         "",
     ] + eventos + [
         "",
-        f"👉 <a href='https://finanzas.alias.nom.pe/'>Ver detalle en FinanzasVH</a>",
+        f"👉 <a href='https://finanzas.alias.nom.pe/'>Ver detalle en FinanzasOS</a>",
     ]
     return "\n".join(lineas)
 

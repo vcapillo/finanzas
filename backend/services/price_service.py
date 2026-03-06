@@ -1,5 +1,5 @@
 """
-FinanzasVH — services/price_service.py
+FinanzasOS — services/price_service.py
 F-02: Actualización automática de precios de inversiones.
 
 Scheduler APScheduler que:

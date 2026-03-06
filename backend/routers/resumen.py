@@ -1,5 +1,5 @@
 """
-FinanzasVH — routers/resumen.py
+FinanzasOS — routers/resumen.py
 F-03: Endpoints del Resumen Mensual de Salud Financiera con IA
 
 Rutas:

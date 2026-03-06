@@ -1,5 +1,5 @@
 /**
- * FinanzasVH v3.0 — BandejaDuplicados.jsx
+ * FinanzasOS v3.0 — BandejaDuplicados.jsx
  * Estilo coherente con App.jsx (mismo sistema inline s.*)
  */
 import { useEffect, useState } from "react";

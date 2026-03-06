@@ -139,12 +139,12 @@ Ve a **Hosts → Proxy Hosts → Add Proxy Host**
 
 > **¿Cuál IP poner?**
 >
-> - Si NPM corre en el **mismo servidor** que FinanzasVH:
+> - Si NPM corre en el **mismo servidor** que FinanzasOS:
 >   - Usa la IP del host Docker: `172.17.0.1`
 >   - O la IP LAN del servidor: `192.168.1.50`
 >
 > - Si NPM corre en un **servidor diferente**:
->   - Usa la IP LAN del servidor donde está FinanzasVH: `192.168.1.50`
+>   - Usa la IP LAN del servidor donde está FinanzasOS: `192.168.1.50`
 
 #### Pestaña "Custom Locations" — NO necesaria
 
@@ -288,7 +288,7 @@ docker network inspect finanzas_net
 
 # Probar el proxy /api desde el servidor
 curl http://localhost:8090/api/health
-# Debe responder: {"status":"ok","app":"FinanzasVH","version":"2.0.0"}
+# Debe responder: {"status":"ok","app":"FinanzasOS","version":"2.0.0"}
 ```
 
 ### El dominio no resuelve desde los clientes
@@ -314,7 +314,7 @@ ss -tlnp | grep :8090
 # Y en NPM cambiar Forward Port a 3001
 ```
 
-### NPM y FinanzasVH en el mismo Docker host — red compartida
+### NPM y FinanzasOS en el mismo Docker host — red compartida
 
 Si quieres que NPM apunte al contenedor por nombre (sin IP):
 

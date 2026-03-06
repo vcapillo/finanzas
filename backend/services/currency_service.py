@@ -1,5 +1,5 @@
 # ============================================================
-# FinanzasVH v3.0 — services/currency_service.py
+# FinanzasOS v3.0 — services/currency_service.py
 # Conversión USD/PEN con fallback al último rate conocido en BD
 # ============================================================
 

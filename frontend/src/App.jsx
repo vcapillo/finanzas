@@ -1,5 +1,5 @@
 /**
- * FinanzasVH v3.1 — App.jsx (refactorizado)
+ * FinanzasOS v3.1 — App.jsx (refactorizado)
  * Punto de entrada principal. ~350 líneas.
  * Módulos extraídos: constants/, utils/, components/
  */
@@ -321,7 +321,7 @@ export default function App({ onLogout }) {
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{background:"linear-gradient(135deg,#22c55e,#16a34a)",borderRadius:9,padding:"7px 9px",fontSize:18}}>💼</div>
           <div>
-            <div style={{fontSize:15,fontWeight:700,letterSpacing:"-0.3px"}}>FinanzasVH <span style={{color:"#22c55e",fontSize:10}}>v3.1</span></div>
+            <div style={{fontSize:15,fontWeight:700,letterSpacing:"-0.3px"}}>FinanzasOS <span style={{color:"#22c55e",fontSize:10}}>v3.1</span></div>
             <div style={{color:"#444",fontSize:10}}>{profile?.name||"Mi sistema financiero"} · {PERIOD_LABEL(period)}</div>
           </div>
         </div>

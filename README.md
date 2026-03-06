@@ -1,4 +1,4 @@
-# 💼 FinanzasVH v2.0
+# 💼 FinanzasOS v2.0
 Sistema de gestión financiera personal — Victor Hugo  
 **Stack:** React + Vite · FastAPI · SQLite · Docker
 

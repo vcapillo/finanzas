@@ -1,5 +1,5 @@
 /**
- * FinanzasVH — components/calendar/CalendarView.jsx
+ * FinanzasOS — components/calendar/CalendarView.jsx
  * Vista mensual de eventos financieros programados.
  */
 import { fmtN } from "../../utils/format.js";

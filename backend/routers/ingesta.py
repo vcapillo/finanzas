@@ -1,5 +1,5 @@
 # ============================================================
-# FinanzasVH v3.0 — routers/ingesta.py
+# FinanzasOS v3.0 — routers/ingesta.py
 # Flujo de ingesta de extractos con IA (Gemini) y revisión de duplicados
 # ============================================================
 

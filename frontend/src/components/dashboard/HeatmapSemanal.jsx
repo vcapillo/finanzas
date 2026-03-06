@@ -1,5 +1,5 @@
 /**
- * FinanzasVH v3.1 — HeatmapSemanal.jsx
+ * FinanzasOS v3.1 — HeatmapSemanal.jsx
  * G-05: Intensidad de gastos por día de la semana y semana del mes.
  * Tema oscuro coherente con el sistema.
  */

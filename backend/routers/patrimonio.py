@@ -1,5 +1,5 @@
 # ============================================================
-# FinanzasVH v3.0 — routers/patrimonio.py
+# FinanzasOS v3.0 — routers/patrimonio.py
 # Las cuentas se sincronizan automáticamente desde Settings.accounts
 # No se necesita seed manual — si el usuario configura sus cuentas
 # en ⚙️ Configuración, aquí aparecen automáticamente.

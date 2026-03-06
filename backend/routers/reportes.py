@@ -1,5 +1,5 @@
 """
-FinanzasVH — routers/reportes.py
+FinanzasOS — routers/reportes.py
 F-08: Exportación y Reportes PDF
 
 Rutas:
@@ -236,7 +236,7 @@ def descargar_resumen_pdf(period: str, db: Session = Depends(get_db)):
             detail=f"Error generando el PDF: {str(e)}",
         )
 
-    filename = f"FinanzasVH_Resumen_{period}.pdf"
+    filename = f"FinanzasOS_Resumen_{period}.pdf"
     logger.info(f"[Reportes] PDF generado: {filename} ({len(pdf_bytes):,} bytes)")
 
     return Response(
